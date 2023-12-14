@@ -19,7 +19,7 @@ from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Camera
 class SensingScene():
     def __init__(self) -> None:
         print("Initializing scene...")
-        self._scene = load_scene(mysionna.rt.scene.etoile) # Try also sionna.rt.scene.etoile
+        self._scene = load_scene("/root/autodl-tmp/sionna_sensing/Single Box/Single Box.xml")# Try also sionna.rt.scene.etoile
         self._scene.frequency = 2.14e9 # in Hz; implicitly updates RadioMaterials
         self._scene.synthetic_array = True # If set to False, ray tracing will be done per antenna element (slower for large arrays)
         self._scene.tx_array = PlanarArray(num_rows=1,
@@ -44,7 +44,7 @@ class SensingScene():
     def get_coverage_map(self):
         print("Computing coverage map...")
         # Compute coverage map
-        cm = self._scene.coverage_map()
+        cm = self._scene.coverage_map(max_depth=1)
         self._cm = cm
         print("Coverage map computed.")
         return cm
@@ -66,5 +66,5 @@ if __name__ == "__main__":
             print(e)
     tf.random.set_seed(1) # Set global random seed for reproducibility
     print("Starting simulation...")
-    # main()
+    main()
     print("Simulation finished.")

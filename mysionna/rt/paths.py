@@ -646,7 +646,6 @@ class Paths:
         # brodcast is not possible
         phase = tf.repeat(phase, a.shape[-1], axis=-1)
         a = a*tf.exp(phase)
-
         if num_paths is not None:
             a, tau = self.pad_or_crop(a, tau, num_paths)
 
@@ -761,6 +760,94 @@ class Paths:
 
         return self
 
+    def merge_different_rx(self,more_paths):
+        r"""
+        Merge ``more_paths`` with the current paths and returns the so-obtained
+        instance. `self` is not updated.
+
+        Input
+        -----
+        more_paths : :class:`~sionna.rt.Paths`
+            First set of paths to merge
+        """
+
+        dtype = self._scene.dtype
+
+        # [max_depth,num_rx,num_tx,max_num_paths,3]
+        more_vertices = more_paths.vertices
+        # [max_depth,num_rx,num_tx,max_num_paths]
+        more_objects = more_paths.objects
+        # [batch_size,max_num_paths]
+        more_types = more_paths.types
+        # more_paths.targets.shape is [num_rx,3]
+        # The paths to merge must have the same number of sources and targets
+
+        # Pad the paths with the max_num_paths
+        padding = self.vertices.shape[3] - more_vertices.shape[3]
+        if padding > 0:
+            more_vertices = tf.pad(more_vertices,
+                                   [[0,0],[0,0],[0,0],[0,padding],[0,0]],
+                                   constant_values=tf.zeros((),
+                                                            dtype.real_dtype))
+            more_objects = tf.pad(more_objects,
+                                  [[0,0],[0,0],[0,0],[0,padding]],
+                                  constant_values=-1)
+        elif padding < 0:
+            padding = -padding
+            self.vertices = tf.pad(self.vertices,
+                                   [[0,0],[0,0],[0,0],[0,padding],[0,0]],
+                            constant_values=tf.zeros((), dtype.real_dtype))
+            self.objects = tf.pad(self.objects,
+                                  [[0,0],[0,0],[0,0],[0,padding]],
+                                  constant_values=-1)
+
+        # Merge types
+        if tf.rank(self.types) == 0:
+            merged_types = tf.repeat(self.types, tf.shape(self.vertices)[3])
+        else:
+            merged_types = self.types
+        if tf.rank(more_types) == 0:
+            more_types = tf.repeat(more_types, tf.shape(more_vertices)[3])
+
+        self.types = tf.concat([merged_types, more_types], axis=1)
+
+        # 选取最大的max_num_paths
+        pad_paths_num = tf.shape(self.a)[5] - tf.shape(more_paths.a)[5]
+        # 填充空维度
+        if pad_paths_num > 0:
+            more_paths.a = tf.pad(more_paths.a, [[0,0],[0,0],[0,0],[0,0],[0,0],[0,pad_paths_num],[0,0]],constant_values=tf.complex(0.,0.))
+            more_paths.tau = tf.pad(more_paths.tau, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(-1.,tf.float32))
+            more_paths.theta_t = tf.pad(more_paths.theta_t, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            more_paths.phi_t = tf.pad(more_paths.phi_t, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            more_paths.theta_r = tf.pad(more_paths.theta_r, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            more_paths.phi_r = tf.pad(more_paths.phi_r, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            more_paths.mask = tf.pad(more_paths.mask, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(False,tf.bool))
+            more_paths.targets_sources_mask = tf.pad(more_paths.targets_sources_mask, [[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(False,tf.bool))
+        elif pad_paths_num < 0:
+            pad_paths_num = -pad_paths_num
+            self.a = tf.pad(self.a, [[0,0],[0,0],[0,0],[0,0],[0,0],[0,pad_paths_num],[0,0]],constant_values=tf.complex(0.,0.))
+            self.tau = tf.pad(self.tau, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(-1.,tf.float32))
+            self.theta_t = tf.pad(self.theta_t, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            self.phi_t = tf.pad(self.phi_t, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            self.theta_r = tf.pad(self.theta_r, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            self.phi_r = tf.pad(self.phi_r, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(0.,tf.float32))
+            self.mask = tf.pad(self.mask, [[0,0],[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(False,tf.bool))
+            self.targets_sources_mask = tf.pad(self.targets_sources_mask, [[0,0],[0,0],[0,pad_paths_num]],constant_values=tf.cast(False,tf.bool))
+        
+        # Concatenate all
+        self.a = tf.concat([self.a, more_paths.a], axis=1)
+        self.tau = tf.concat([self.tau, more_paths.tau], axis=1)
+        self.theta_t = tf.concat([self.theta_t, more_paths.theta_t], axis=1)
+        self.phi_t = tf.concat([self.phi_t, more_paths.phi_t], axis=1)
+        self.theta_r = tf.concat([self.theta_r, more_paths.theta_r], axis=1)
+        self.phi_r = tf.concat([self.phi_r, more_paths.phi_r], axis=1)
+        self.mask = tf.concat([self.mask, more_paths.mask], axis=1)
+        self.vertices = tf.concat([self.vertices, more_vertices], axis=1)
+        self.objects = tf.concat([self.objects, more_objects], axis=1)
+        self.targets_sources_mask = tf.concat([self.targets_sources_mask, more_paths.targets_sources_mask], axis=0)
+        
+        return self
+    
     def finalize(self):
         """
         This function must be called to finalize the creation of the paths.
@@ -814,6 +901,31 @@ class Paths:
         # Normalize delays
         self.normalize_delays = True
 
+    def finalize_different_rx(self):
+        """
+        This function must be called to finalize the creation of the paths.
+        This function:
+        - Computes the smallest delay for delay normalization
+        """
+        tau = self.tau
+        if tau.shape[-1] == 0: # No paths
+            self._min_tau = tf.zeros_like(tau)
+        else:
+            zero = tf.zeros((), tau.dtype)
+            inf = tf.cast(np.inf, tau.dtype)
+            tau = tf.where(tau < zero, inf, tau)
+            if self._scene.synthetic_array:
+                # [1, num_rx, num_tx, 1]
+                min_tau = tf.reduce_min(tau, axis=3, keepdims=True)
+            else:
+                # [1, num_rx, 1, num_tx, 1, 1]
+                min_tau = tf.reduce_min(tau, axis=(2, 4, 5), keepdims=True)
+            min_tau = tf.where(tf.math.is_inf(min_tau), zero, min_tau)
+            self._min_tau = min_tau
+
+        # Normalize delays
+        self.normalize_delays = False
+    
     def set_los_path_type(self):
         """
         Flags paths that do not hit any objects to as LoS ones.

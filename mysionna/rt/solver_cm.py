@@ -1782,18 +1782,6 @@ class SolverCoverageMap(SolverBase):
             # [num_samples, 3]
             mp_hit_point = ray.o + si_mp.t*ray.d
             mp_hit_point = mi_to_tf_tensor(mp_hit_point, self._rdtype)
-            # 记录合法射线的长度，计算时延
-            dis_vec = mp_hit_point - ray.o
-            if depth == 0:
-                # 初始时是[num_samples]
-                dis_per_depth = tf.sqrt(tf.reduce_sum(tf.square(dis_vec), axis=-1))
-                # 若hit_mp_dr为True，则dis_per_depth为其本身，否则为0
-                dis_per_depth = tf.where(hit_mp, dis_per_depth, 0)
-            else:
-                # [max_depth,num_samples]
-                dis = tf.sqrt(tf.reduce_sum(tf.square(dis_vec), axis=-1))
-                dis = tf.where(hit_mp, dis, 0)
-                dis_per_depth = tf.concat([dis_per_depth,dis],axis=0)
                 
             cm = self._update_coverage_map(cm_center, cm_size,
                 cm_cell_size, num_cells, rot_gcs_2_mp, cm_normal, tx_rot_mat,

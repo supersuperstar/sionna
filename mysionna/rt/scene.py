@@ -26,6 +26,7 @@ from .receiver import Receiver
 from .scene_object import SceneObject
 from .solver_paths import SolverPaths, PathsTmpData
 from .solver_cm import SolverCoverageMap
+from .solver_cm_sensing import SolverCoverageMapSensing
 from .transmitter import Transmitter
 from .previewer import InteractiveDisplay
 from .renderer import render, coverage_map_color_mapping
@@ -143,7 +144,8 @@ class Scene:
             # Solver for coverage map
             self._solver_cm = SolverCoverageMap(self, solver=self._solver_paths,
                                                 dtype=dtype)
-
+            self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
+                                                dtype=dtype)
             # Load the cameras
             self._load_cameras()
 
@@ -1180,7 +1182,7 @@ class Scene:
 
         # Compute the coverage map using the solver
         # [num_sources, num_cells_x, num_cells_y]
-        output = self._solver_cm(max_depth=max_depth,
+        output = self._solver_cm_sensing(max_depth=max_depth,
                                  rx_orientation=rx_orientation,
                                  cm_center=cm_center,
                                  cm_orientation=cm_orientation,
