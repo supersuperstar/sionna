@@ -1,0 +1,127 @@
+<scene version="2.1.0">
+
+<!-- Defaults, these can be set via the command line: -Darg=value -->
+
+	<default name="spp" value="4096"/>
+	<default name="resx" value="1920"/>
+	<default name="resy" value="1080"/>
+
+<!-- Camera and Rendering Parameters -->
+
+	<integrator type="path">
+		<integer name="max_depth" value="12"/>
+	</integrator>
+	<sensor type="perspective" id="Camera">
+		<string name="fov_axis" value="x"/>
+		<float name="fov" value="39.597752"/>
+		<float name="principal_point_offset_x" value="0.000000"/>
+		<float name="principal_point_offset_y" value="-0.000000"/>
+		<float name="near_clip" value="0.100000"/>
+		<float name="far_clip" value="10000.000000"/>
+		<transform name="to_world">
+			<rotate x="1" angle="102.2550352718277"/>
+			<rotate y="1" angle="4.521399184078683e-06"/>
+			<rotate z="1" angle="63.41797176429906"/>
+			<translate value="-669.165100 151.607361 157.339462"/>
+		</transform>
+		<sampler type="independent">
+			<integer name="sample_count" value="$spp"/>
+		</sampler>
+		<film type="hdrfilm">
+			<integer name="width" value="$resx"/>
+			<integer name="height" value="$resy"/>
+		</film>
+	</sensor>
+
+<!-- Materials -->
+
+	<bsdf type="twosided" id="mat-itu_plywood">
+		<bsdf type="diffuse">
+			<rgb value="0.219526 0.219526 0.254152" name="reflectance"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_ceiling_board">
+		<bsdf type="diffuse">
+			<rgb value="0.401968 0.111874 0.086764" name="reflectance"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_floorboard">
+		<bsdf type="diffuse">
+			<rgb value="0.266356 0.109462 0.059511" name="reflectance"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_concrete">
+		<bsdf type="diffuse">
+			<rgb value="0.539479 0.539479 0.539480" name="reflectance"/>
+		</bsdf>
+	</bsdf>
+
+<!-- Emitters -->
+
+
+<!-- Shapes -->
+
+	<shape type="ply" id="elm__2" name="elm__2">
+		<string name="filename" value="meshes/ceiling-itu_ceiling_board.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__3" name="elm__3">
+		<string name="filename" value="meshes/door-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__4" name="elm__4">
+		<string name="filename" value="meshes/floor-itu_floorboard.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_floorboard" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__5" name="elm__5">
+		<string name="filename" value="meshes/table1-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__6" name="elm__6">
+		<string name="filename" value="meshes/table2-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__7" name="elm__7">
+		<string name="filename" value="meshes/table3-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__8" name="elm__8">
+		<string name="filename" value="meshes/table4-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__9" name="elm__9">
+		<string name="filename" value="meshes/table5-itu_plywood.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__10" name="elm__10">
+		<string name="filename" value="meshes/wall1-itu_concrete.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__11" name="elm__11">
+		<string name="filename" value="meshes/wall2-itu_concrete.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__12" name="elm__12">
+		<string name="filename" value="meshes/wall3-itu_concrete.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="elm__13" name="elm__13">
+		<string name="filename" value="meshes/wall4-itu_concrete.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+
+<!-- Volumes -->
+
+</scene>
