@@ -11,7 +11,7 @@
 	<integrator type="path" id="elm__0" name="elm__0">
 		<integer name="max_depth" value="12"/>
 	</integrator>
-	<sensor type="perspective" id="elm__18" name="elm__18">
+	<sensor type="perspective" id="摄像机" name="摄像机">
 		<string name="fov_axis" value="x"/>
 		<float name="fov" value="39.597755"/>
 		<float name="principal_point_offset_x" value="0.000000"/>
@@ -21,8 +21,8 @@
 		<transform name="to_world">
 			<rotate x="1" angle="109.56216972139326"/>
 			<rotate y="1" angle="0.7892899903800622"/>
-			<rotate z="1" angle="-31.760840678328268"/>
-			<translate value="2.357080 4.602375 3.114122"/>
+			<rotate z="1" angle="148.2391609155335"/>
+			<translate value="-2.357080 -4.602375 3.114122"/>
 		</transform>
 		<sampler type="independent" name="sampler">
 			<integer name="sample_count" value="$spp"/>
@@ -39,7 +39,7 @@
 		<rgb value="0.800000 0.800000 0.800000" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_plywood" name="mat-itu_plywood">
-		<rgb value="0.311000 0.084000 0.026000" name="reflectance"/>
+		<rgb value="0.800000 0.400000 0.400000" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_floorboard" name="mat-itu_floorboard">
 		<rgb value="0.800000 0.800000 0.800000" name="reflectance"/>
@@ -50,71 +50,71 @@
 
 <!-- Emitters -->
 
-	<emitter type="directional" id="elm__17" name="elm__17">
+	<emitter type="directional" id="emit-日光" name="emit-日光">
 		<rgb value="1.000000 1.000000 1.000000" name="irradiance"/>
 		<transform name="to_world">
-			<matrix value="0.000000 1.000000 0.000000 -0.014133 1.000000 0.000000 0.000000 0.304171 0.000000 0.000000 -1.000000 6.879978 0.000000 0.000000 0.000000 1.000000"/>
+			<matrix value="0.567473 -0.736800 0.367559 -5.957753 -0.823392 -0.507795 0.253318 -0.304171 0.000000 -0.446396 -0.894836 6.879978 0.000000 0.000000 0.000000 1.000000"/>
 		</transform>
 	</emitter>
 
 <!-- Shapes -->
 
-	<shape type="ply" id="elm__2" name="elm__2">
+	<shape type="ply" id="mesh-ceiling-itu_ceiling_board" name="mesh-ceiling-itu_ceiling_board">
 		<string name="filename" value="meshes/ceiling-itu_ceiling_board.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_ceiling_board" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__4" name="elm__4">
+	<shape type="ply" id="mesh-door-itu_plywood" name="mesh-door-itu_plywood">
 		<string name="filename" value="meshes/door-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__6" name="elm__6">
+	<shape type="ply" id="mesh-floor-itu_floorboard" name="mesh-floor-itu_floorboard">
 		<string name="filename" value="meshes/floor-itu_floorboard.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__7" name="elm__7">
+	<shape type="ply" id="mesh-table1-itu_plywood" name="mesh-table1-itu_plywood">
 		<string name="filename" value="meshes/table1-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__8" name="elm__8">
+	<shape type="ply" id="mesh-table2-itu_plywood" name="mesh-table2-itu_plywood">
 		<string name="filename" value="meshes/table2-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__9" name="elm__9">
+	<shape type="ply" id="mesh-table3-itu_plywood" name="mesh-table3-itu_plywood">
 		<string name="filename" value="meshes/table3-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__10" name="elm__10">
+	<shape type="ply" id="mesh-table4-itu_plywood" name="mesh-table4-itu_plywood">
 		<string name="filename" value="meshes/table4-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__11" name="elm__11">
+	<shape type="ply" id="mesh-table5-itu_plywood" name="mesh-table5-itu_plywood">
 		<string name="filename" value="meshes/table5-itu_plywood.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__13" name="elm__13">
+	<shape type="ply" id="mesh-wall1-itu_concrete" name="mesh-wall1-itu_concrete">
 		<string name="filename" value="meshes/wall1-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__14" name="elm__14">
+	<shape type="ply" id="mesh-wall2-itu_concrete" name="mesh-wall2-itu_concrete">
 		<string name="filename" value="meshes/wall2-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__15" name="elm__15">
+	<shape type="ply" id="mesh-wall3-itu_concrete" name="mesh-wall3-itu_concrete">
 		<string name="filename" value="meshes/wall3-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="elm__16" name="elm__16">
+	<shape type="ply" id="mesh-wall4-itu_concrete" name="mesh-wall4-itu_concrete">
 		<string name="filename" value="meshes/wall4-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>

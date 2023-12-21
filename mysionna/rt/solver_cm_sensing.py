@@ -675,7 +675,7 @@ class SolverCoverageMapSensing(SolverBase):
         a = tf.reduce_sum(a*precoding_vec, axis=-1)
         # [num_hits]
         a = tf.reduce_sum(tf.math.conj(combining_vec)*a, axis=-1)
-        a_depth = a
+
         # Compute the amplitude of the path
         # [num_hits]
         a = tf.square(tf.abs(a))
@@ -699,7 +699,7 @@ class SolverCoverageMapSensing(SolverBase):
         # [num_tx, num_cells_y+1, num_cells_x+1]
         cm = tf.tensor_scatter_nd_add(cm, hit_cells, ray_weights*a)
 
-        return cm, a_depth,hit_mp_ind
+        return cm
 
     def _compute_reflected_field(self, normals, etas, scattering_coefficient,
                                  k_i, e_field, field_es, field_ep, scattering):
@@ -1782,36 +1782,13 @@ class SolverCoverageMapSensing(SolverBase):
             # [num_samples, 3]
             mp_hit_point = ray.o + si_mp.t*ray.d
             mp_hit_point = mi_to_tf_tensor(mp_hit_point, self._rdtype)
-            # 记录合法射线的长度，计算时延
-            dis_vec = mp_hit_point - ray.o
-            if depth == 0:
-                # 初始时是[num_samples]
-                dis_per_depth = tf.sqrt(tf.reduce_sum(tf.square(dis_vec), axis=-1))
-                # 若hit_mp_dr为True，则dis_per_depth为其本身，否则为0
-                dis_per_depth = tf.where(hit_mp, dis_per_depth, 0)
-            else:
-                # [max_depth,num_samples]
-                dis = tf.sqrt(tf.reduce_sum(tf.square(dis_vec), axis=-1))
-                dis = tf.where(hit_mp, dis, 0)
-                dis_per_depth = tf.concat([dis_per_depth,dis],axis=0)
                 
-            cm,a_depth,hit_mp_ind = self._update_coverage_map(cm_center, cm_size,
+            cm = self._update_coverage_map(cm_center, cm_size,
                 cm_cell_size, num_cells, rot_gcs_2_mp, cm_normal, tx_rot_mat,
                 rx_rot_mat, precoding_vec, combining_vec, samples_tx_indices,
                 e_field, field_es, field_ep, mp_hit_point, hit_mp, k_tx,
                 previous_int_point, cm)
-            hit_mp_ind = tf.expand_dims(hit_mp_ind, axis=-1)
-            
-            if depth == 0:
-                a_per_depth = tf.complex(tf.zeros([num_samples],dtype=self._rdtype),
-                                        tf.zeros([num_samples],dtype=self._rdtype))
-                a_per_depth = tf.tensor_scatter_nd_update(a_per_depth, hit_mp_ind, a_depth)
-            else:
-                a = tf.complex(tf.zeros([num_samples],dtype=self._rdtype),
-                                        tf.zeros([num_samples],dtype=self._rdtype))
-                a = tf.tensor_scatter_nd_update(a, hit_mp_ind, a_depth)
-                a_per_depth = tf.concat([a_per_depth,a],axis=0)
-            
+
             # If the maximum requested depth is reached, we stop, as we just
             # updated the coverage map with the last requested contribution from
             # the rays.

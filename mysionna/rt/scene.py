@@ -26,7 +26,7 @@ from .receiver import Receiver
 from .scene_object import SceneObject
 from .solver_paths import SolverPaths, PathsTmpData
 from .solver_cm import SolverCoverageMap
-from .solver_cm_sensing import SolverCoverageMapSensing
+# from .solver_cm_sensing import SolverCoverageMapSensing
 from .transmitter import Transmitter
 from .previewer import InteractiveDisplay
 from .renderer import render, coverage_map_color_mapping
@@ -144,8 +144,8 @@ class Scene:
             # Solver for coverage map
             self._solver_cm = SolverCoverageMap(self, solver=self._solver_paths,
                                                 dtype=dtype)
-            self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
-                                                dtype=dtype)
+            # self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
+            #                                     dtype=dtype)
             # Load the cameras
             self._load_cameras()
 
@@ -376,6 +376,15 @@ class Scene:
             self._cameras[name] = item
             item.scene = self
 
+    def add_sensing_targets(self,items):
+        """_summary_
+
+        Args:
+            items (list): sensing items to add to the scene,must be a list of mi.Shape
+        """
+        mi_scene = self._scene
+        
+    
     def remove(self, name):
         # pylint: disable=line-too-long
         """
