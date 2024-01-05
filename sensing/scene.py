@@ -3,7 +3,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 import mysionna
-import SensingTarget
+import sensing.target as target
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Camera
 
 class SensingScene():
