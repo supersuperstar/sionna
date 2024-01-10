@@ -138,7 +138,7 @@ class SolverCoverageMapSensing(SolverBase):
     def __call__(self, max_depth, rx_orientation,
                  cm_center, cm_orientation, cm_size, cm_cell_size,
                  combining_vec, precoding_vec, num_samples,
-                 los, reflection, diffraction, scattering, edge_diffraction):
+                 los, reflection, diffraction, scattering, edge_diffraction,targets):
 
         # If reflection and scattering are disabled, no need for a max_depth
         # higher than 1.

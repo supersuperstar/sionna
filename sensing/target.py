@@ -2,15 +2,17 @@ from typing import Any
 import mysionna
 import mitsuba as mi
 from sionna.constants import PI
+from mysionna.rt.radio_material import RadioMaterial
 import tensorflow as tf
 from importlib_resources import files
 import sensing.targets as targets
 
 class SensingTarget():
-    def __init__(self, filename = str(files(targets).joinpath('human.ply')), position=[0,0,0], orientation=[0,0,0], size=[1,1,1],velocity=[0.5,0.5,0],dtype = tf.complex64):
+    def __init__(self,name,material, filename = str(files(targets).joinpath('human.ply')), position=[0,0,0], orientation=[0,0,0], size=[1,1,1],velocity=[0.5,0.5,0],dtype = tf.complex64):
         """_summary_
 
         Args:
+            name (_type_): _description_
             filename (_type_, optional): _description_. Defaults to str(files(targets).joinpath('human.ply')).
             position (list, optional): _description_. Defaults to [0,0,0].
             orientation (list, optional): _description_. Defaults to [0,0,0].
@@ -19,9 +21,11 @@ class SensingTarget():
             dtype (_type_, optional): _description_. Defaults to tf.complex64.
 
         Raises:
-            "target must be a .ply file": _description_
-            "loading target failed.": _description_
+            ValueError: _description_
+            ValueError: _description_
         """
+        self.name = name
+        self.material = material
         self._filename = filename
         self._dtype = dtype
         self._rdtype = dtype.real_dtype

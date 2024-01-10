@@ -33,6 +33,8 @@ from .renderer import render, coverage_map_color_mapping
 from .utils import expand_to_rank
 from .paths import Paths
 from sionna.rt import scenes
+from sensing.target import SensingTarget
+from .solver_cm_sensing import SolverCoverageMapSensing
 
 
 class Scene:
@@ -90,6 +92,8 @@ class Scene:
             instance._radio_materials = {}
             # Scene objects
             instance._scene_objects = {}
+            # Sensing targets
+            instance._sensing_targets = {}
             # By default, the antenna arrays is applied synthetically
             instance._synthetic_array = True
             # Holds a reference to the interactive preview widget
@@ -122,7 +126,7 @@ class Scene:
             self._clear()
 
             # Set the frequency to the default value
-            self.frequency = Scene.DEFAULT_FREQUENCY
+            self._frequency = Scene.DEFAULT_FREQUENCY
 
             # Populate with ITU materials
             instantiate_itu_materials(self._dtype)
@@ -144,8 +148,9 @@ class Scene:
             # Solver for coverage map
             self._solver_cm = SolverCoverageMap(self, solver=self._solver_paths,
                                                 dtype=dtype)
-            # self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
-            #                                     dtype=dtype)
+            # Solver for sensing coverage map
+            self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
+                                                dtype=dtype)
             # Load the cameras
             self._load_cameras()
 
@@ -244,6 +249,14 @@ class Scene:
         return dict(self._radio_materials)
 
     @property
+    def sensing_targets(self):
+        """
+        `dict` (read-only), { "name", :class:`~sionna.rt.SensingTarget`} : Dictionary
+            of sensing targets
+        """
+        return dict(self._sensing_targets)
+    
+    @property
     def objects(self):
         # pylint: disable=line-too-long
         """
@@ -324,6 +337,8 @@ class Scene:
             return self._scene_objects[name]
         if name in self._cameras:
             return self._cameras[name]
+        if name in self._sensing_targets:
+            return self._sensing_targets[name]
         return None
 
     def add(self, item):
@@ -339,8 +354,8 @@ class Scene:
             Item to add to the scene
         """
         if ( (not isinstance(item, OrientedObject))
-         and (not isinstance(item, RadioMaterial)) ):
-            err_msg = "The input must be a Transmitter, Receiver, Camera, or"\
+         and (not isinstance(item, RadioMaterial)) and(not isinstance(item, SensingTarget))):
+            err_msg = "The input must be a Transmitter, Receiver, Camera, SensingTarget, or"\
                       " RadioMaterial"
             raise ValueError(err_msg)
 
@@ -375,15 +390,8 @@ class Scene:
         elif isinstance(item, Camera):
             self._cameras[name] = item
             item.scene = self
-
-    def add_sensing_targets(self,items):
-        """_summary_
-
-        Args:
-            items (list): sensing items to add to the scene,must be a list of mi.Shape
-        """
-        mi_scene = self._scene
-        
+        elif isinstance(item, SensingTarget):
+            self._sensing_targets[name] = item
     
     def remove(self, name):
         # pylint: disable=line-too-long
@@ -422,6 +430,9 @@ class Scene:
                 raise ValueError(msg)
             del self._radio_materials[name]
 
+        elif isinstance(item, SensingTarget):
+            del self._sensing_targets[name]
+        
         else:
             msg = "Only Transmitters, Receivers, Cameras, or RadioMaterials"\
                   " can be removed"
@@ -1191,7 +1202,7 @@ class Scene:
 
         # Compute the coverage map using the solver
         # [num_sources, num_cells_x, num_cells_y]
-        output = self._solver_cm_sensing(max_depth=max_depth,
+        output = self._solver_cm(max_depth=max_depth,
                                  rx_orientation=rx_orientation,
                                  cm_center=cm_center,
                                  cm_orientation=cm_orientation,
@@ -1207,7 +1218,7 @@ class Scene:
                                  edge_diffraction=edge_diffraction)
 
         return output
-
+    
     def preview(self, paths=None, show_paths=True, show_devices=True,
                 show_orientations=False,
                 coverage_map=None, cm_tx=0, cm_db_scale=True,
@@ -1666,6 +1677,7 @@ class Scene:
         self._cameras.clear()
         self._radio_materials.clear()
         self._scene_objects.clear()
+        self._sensing_targets.clear()
         self._tx_array = None
         self._rx_array = None
         self._preview_widget = None
@@ -1769,7 +1781,7 @@ class Scene:
             obj.radio_material = mat_name
 
             self._scene_objects[name] = obj
-
+        
     def _is_name_used(self, name):
         """
         Returns `True` if ``name`` is used by a scene object, a transmitter,
@@ -1778,9 +1790,220 @@ class Scene:
         used = ((name in self._transmitters)
              or (name in self._receivers)
              or (name in self._radio_materials)
-             or (name in self._scene_objects))
+             or (name in self._scene_objects)
+             or (name in self._sensing_targets))
         return used
 
+    ##############################
+    # methods and properties for sensing
+    ##############################
+    
+    def compute_paths_sensing(self, paths,return_obj_names=False):
+        # pylint: disable=line-too-long
+        """_summary_
+
+        Input
+        ------
+        max_depth : int
+            Maximum depth (i.e., number of bounces) allowed for tracing the
+            paths. Defaults to 3.
+
+        method : str ("exhaustive"|"fibonacci")
+            Ray tracing method to be used.
+            The "exhaustive" method tests all possible combinations of primitives.
+            This method is not compatible with scattering.
+            The "fibonacci" method uses a shoot-and-bounce approach to find
+            candidate chains of primitives. Initial ray directions are chosen
+            according to a Fibonacci lattice on the unit sphere. This method can be
+            applied to very large scenes. However, there is no guarantee that
+            all possible paths are found.
+            Defaults to "fibonacci".
+
+        num_samples : int
+            Number of rays to trace in order to generate candidates with
+            the "fibonacci" method.
+            This number is split equally among the different transmitters
+            (when using synthetic arrays) or transmit antennas (when not using
+            synthetic arrays).
+            This parameter is ignored when using the exhaustive method.
+            Tracing more rays can lead to better precision
+            at the cost of increased memory requirements.
+            Defaults to 1e6.
+
+        los : bool
+            If set to `True`, then the LoS paths are computed.
+            Defaults to `True`.
+
+        reflection : bool
+            If set to `True`, then the reflected paths are computed.
+            Defaults to `True`.
+
+        diffraction : bool
+            If set to `True`, then the diffracted paths are computed.
+            Defaults to `False`.
+
+        scattering : bool
+            if set to `True`, then the scattered paths are computed.
+            Only works with the Fibonacci method.
+            Defaults to `False`.
+
+        scat_keep_prob : float
+            Probability with which a scattered path is kept.
+            This is helpful to reduce the number of computed scattered
+            paths, which might be prohibitively high in some scenes.
+            Must be in the range (0,1). Defaults to 0.001.
+
+        edge_diffraction : bool
+            If set to `False`, only diffraction on wedges, i.e., edges that
+            connect two primitives, is considered.
+            Defaults to `False`.
+
+        check_scene : bool
+            If set to `True`, checks that the scene is well configured before
+            computing the paths. This can add a significant overhead.
+            Defaults to `True`.
+
+        scat_random_phases : bool
+            If set to `True` and if scattering is enabled, random uniform phase
+            shifts are added to the scattered paths.
+            Defaults to `True`.
+
+        testing : bool
+            If set to `True`, then additional data is returned for testing.
+            Defaults to `False`.
+
+        Output
+        ------
+        :paths : :class:`~sionna.rt.Paths`
+            Simulated paths
+        """
+        # check if targets are set correctly
+        if self._target_names is None or self._target_velocities is None:
+            raise ValueError('target_names and target_velocities must be set')
+        if len(self._target_names) != len(self._target_velocities):
+            raise ValueError('target_names and target_velocities must be the same length')
+        
+        # get the names of objects interacting with the paths
+        paths_obj_names = self.get_interacting_objects(paths)
+        
+        paths = self._apply_doppler(paths, self.target_names, self.target_velocities, paths_obj_names)
+        
+        if return_obj_names:
+            return paths, paths_obj_names
+        return paths
+        
+    def get_interacting_objects(self, paths:Paths):
+        obj_names,wedges_names = self._get_objects_name()
+        objects = paths.objects
+        
+        # expand types to the shape of objects
+        types = paths.types[0]
+        paths_obj_names = tf.fill(objects.shape, 'None')
+        types_repeat = tf.repeat(tf.expand_dims(types, axis=0), repeats=objects.shape[2], axis=0)
+        types_repeat = tf.repeat(tf.expand_dims(types_repeat, axis=0), repeats=objects.shape[1], axis=0)
+        types_repeat = tf.repeat(tf.expand_dims(types_repeat, axis=0), repeats=objects.shape[0], axis=0)
+        
+        # mask 
+        mask_diff = tf.where(types_repeat == 2, True, False)
+        mask_diff = tf.logical_and(mask_diff, objects != -1)
+        mask_ref_scatt = tf.where(tf.logical_or(types_repeat == 1, types_repeat == 3), True, False)
+        mask_ref_scatt = tf.logical_and(mask_ref_scatt, objects != -1)
+        indices_diff = tf.where(mask_diff)
+        indices_ref_scatt = tf.where(mask_ref_scatt)
+        
+        # update
+        updates_diff = tf.gather(wedges_names, tf.reshape(objects[mask_diff], [-1]))
+        updates_ref_scatt = tf.gather(obj_names, tf.reshape(objects[mask_ref_scatt], [-1]))
+        paths_obj_names = tf.tensor_scatter_nd_update(paths_obj_names, indices_diff, updates_diff)
+        paths_obj_names = tf.tensor_scatter_nd_update(paths_obj_names, indices_ref_scatt, updates_ref_scatt)
+
+        return paths_obj_names
+        
+    def _get_objects_name(self):
+        """find the names of objects in the xml file,
+        objects' names must be with the type 'mesh-name-XXX',XXX is the meterial or other string.
+        for scattering and reflection ,this method return the name of object.
+        and for diffraction ,this method return the name of two objects that make the wedge and concatenate them with '&'.
+        Args:
+            paths (_type_): from compute_paths method
+
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            obj_names : [len(shapes)], list
+                
+                
+            wedges_names : [len(wedges)], list
+                the names of wedges
+        """
+        mi_scene = self.mi_scene
+        wedges_2_objects = self._solver_paths._wedges_objects
+        wedges_names = []
+        obj_names = []
+        for _,s in enumerate(mi_scene.shapes()):
+            name = s.id().split('-')[1] 
+            obj_names.append(name)
+
+        for [obj1,obj2] in wedges_2_objects:
+            if obj1==obj2:
+                wedges_names.append(obj_names[obj1])
+            else:
+                wedges_names.append(obj_names[obj1]+'&'+obj_names[obj2])
+        
+        return obj_names, wedges_names
+
+    def _apply_doppler(self,paths,names,velocities):
+        
+        objects = paths.objects
+        wedges_2_objects = self._solver_paths._wedges_objects
+        mi_scene = self.mi_scene
+        obj_num = len(mi_scene.shapes())
+        obj_names = {}
+        for i,s in enumerate(mi_scene.shapes()):
+            name = s.id().split('-')[1] 
+            obj_names[name] = i
+        
+        for i,name in enumerate(names):
+            # expand name to the shape of paths_obj_names
+            idx = obj_names[name]
+            idx_tmp = tf.fill(objects.shape, idx)
+            
+            mask = tf.where(objects == idx_tmp, True, False)
+            interacting_paths_mask = tf.reduce_any(mask, axis=0)
+            
+        return paths
+  
+    
+    
+    @property
+    def target_names(self):
+        return self._target_names
+    
+    @target_names.setter
+    def target_names(self, value):
+        if not isinstance(value, list):
+            raise ValueError('target_names must be a list of string')
+        for name in value:
+            if not isinstance(name, str):
+                raise ValueError('target_names must be a list of string')
+        self._target_names = tf.convert_to_tensor(value, dtype=tf.string)
+    
+    @property
+    def target_velocities(self):
+        return self._target_velocities
+    
+    @target_velocities.setter
+    def target_velocities(self, value):
+        if not isinstance(value, list):
+            raise ValueError('target_velocities must be a list of 3D vector')
+        for v in value:
+            if not isinstance(v, list):
+                raise ValueError('target_velocities must be a list of 3D vector')
+            if len(v) != 3:
+                raise ValueError('target_velocities must be a list of 3D vector')
+        self._target_velocities = tf.convert_to_tensor(value, dtype=tf.float32)
+    
 
 def load_scene(filename=None, dtype=tf.complex64):
     # pylint: disable=line-too-long
