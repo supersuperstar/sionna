@@ -373,7 +373,7 @@ class Paths:
         self._normalize_delays = v
 
     def apply_doppler(self, sampling_frequency, num_time_steps,
-                      tx_velocities=(0.,0.,0.), rx_velocities=(0.,0.,0.)):
+                      tx_velocities=(0.,0.,0.), rx_velocities=(0.,0.,0.), target_velocities=None):
         # pylint: disable=line-too-long
         r"""
         Apply Doppler shifts corresponding to input transmitters and receivers
@@ -420,10 +420,15 @@ class Paths:
             transmitters [m/s].
             Defaults to `[0,0,0]`.
 
-        rx_velocities : [batch_size, num_tx, 3] or broadcastable, tf.float | `None`
+        rx_velocities : [batch_size, num_rx, 3] or broadcastable, tf.float | `None`
             Velocity vectors :math:`(v_\text{x}, v_\text{y}, v_\text{z})` of all
             receivers [m/s].
             Defaults to `[0,0,0]`.
+        
+        target_velocities : [1, 1, 1, 1, 1, max_num_paths, 3], tf.float | `None`
+            Velocity vectors :math:`(v_\text{x}, v_\text{y}, v_\text{z})` of all
+            targets [m/s].
+            Defaults to `None`.
         """
 
         dtype = self._scene.dtype
@@ -452,6 +457,14 @@ class Paths:
             msg = "The number of time samples must a positive integer"
             raise ValueError(msg)
 
+        if target_velocities is not None:
+            if tf.rank(target_velocities) != 7:
+                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
+            if target_velocities.shape[6] != 3:
+                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
+            if target_velocities.shape[5] != self.a.shape[-2]:
+                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
+        
         # Drop previous time step dimension, if any
         if tf.rank(self.a) == 7:
             self.a = self.a[...,0]
@@ -485,7 +498,8 @@ class Paths:
         # [batch_dim, num_rx, 1, num_tx, 1, max_num_paths]
         tx_ds = two_pi*dot(tx_velocities, k_t)/self._scene.wavelength
         rx_ds = two_pi*dot(rx_velocities, k_r)/self._scene.wavelength
-        ds = tx_ds + rx_ds
+        tg_ds = two_pi*dot(target_velocities, k_r)/self._scene.wavelength
+        ds = tx_ds + rx_ds + tg_ds
         # Expand for the time sample dimension
         # [batch_dim, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, 1]
         # or

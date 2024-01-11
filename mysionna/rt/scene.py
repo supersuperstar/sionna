@@ -33,6 +33,7 @@ from .renderer import render, coverage_map_color_mapping
 from .utils import expand_to_rank
 from .paths import Paths
 from sionna.rt import scenes
+from sionna.utils.tensors import insert_dims
 from sensing.target import SensingTarget
 from .solver_cm_sensing import SolverCoverageMapSensing
 
@@ -1798,7 +1799,7 @@ class Scene:
     # methods and properties for sensing
     ##############################
     
-    def compute_paths_sensing(self, paths,return_obj_names=False):
+    def compute_target_velocities(self, paths,return_obj_names=False):
         # pylint: disable=line-too-long
         """_summary_
 
@@ -1883,14 +1884,12 @@ class Scene:
         if len(self._target_names) != len(self._target_velocities):
             raise ValueError('target_names and target_velocities must be the same length')
         
-        # get the names of objects interacting with the paths
-        paths_obj_names = self.get_interacting_objects(paths)
-        
-        paths = self._apply_doppler(paths, self.target_names, self.target_velocities, paths_obj_names)
+        v = self._apply_target_doppler(paths, self.target_names, self.target_velocities)
         
         if return_obj_names:
-            return paths, paths_obj_names
-        return paths
+            paths_obj_names = self.get_interacting_objects(paths)
+            return v, paths_obj_names
+        return v
         
     def get_interacting_objects(self, paths:Paths):
         obj_names,wedges_names = self._get_objects_name()
@@ -1953,26 +1952,62 @@ class Scene:
         
         return obj_names, wedges_names
 
-    def _apply_doppler(self,paths,names,velocities):
+    def _apply_target_doppler(self,paths:Paths,names,velocities):
         
+        # [max_depth,num_targets,num_sources,max_num_paths]
         objects = paths.objects
+        # [max_num_wedges,2]
         wedges_2_objects = self._solver_paths._wedges_objects
         mi_scene = self.mi_scene
+        # [max_num_shapes]
         obj_num = len(mi_scene.shapes())
+        
+        # dictionary of objects' names and index
         obj_names = {}
         for i,s in enumerate(mi_scene.shapes()):
             name = s.id().split('-')[1] 
             obj_names[name] = i
         
-        for i,name in enumerate(names):
+        # mask for objects and wedges
+        is_obj = tf.where(tf.logical_and(objects != -1,objects<obj_num), True, False)
+        is_wedge = tf.where(tf.logical_and(tf.logical_not(is_obj),objects!=-1), True, False)
+        
+        # convert wedges to objects
+        wedge1 = wedges_2_objects[:,0]
+        wedge2 = wedges_2_objects[:,1]
+        indices = tf.where(is_wedge)
+        updates1 = tf.gather(wedge1, tf.reshape(objects[is_wedge], [-1]))
+        updates2 = tf.gather(wedge2, tf.reshape(objects[is_wedge], [-1]))
+        objects_wedge1 = tf.tensor_scatter_nd_update(objects, indices, updates1)
+        objects_wedge2 = tf.tensor_scatter_nd_update(objects, indices, updates2)
+        
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+        num_rx = paths.a.shape[1]
+        num_tx = paths.a.shape[3]
+        max_num_paths = paths.a.shape[5]
+        # [1, num_rx, 1, num_tx, 1, max_num_paths, 3]
+        v = tf.zeros([1,num_rx,1,num_tx,1,max_num_paths,3], dtype=tf.float32)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+        for i,(name,velocity) in enumerate(zip(names,velocities)):
             # expand name to the shape of paths_obj_names
+            
             idx = obj_names[name]
-            idx_tmp = tf.fill(objects.shape, idx)
-            
-            mask = tf.where(objects == idx_tmp, True, False)
-            interacting_paths_mask = tf.reduce_any(mask, axis=0)
-            
-        return paths
+            idx_fill = tf.fill(objects.shape, idx)
+            # mask which paths interact with the target and the paths
+            # [max_depth,num_targets,num_sources,max_num_paths]
+            obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj), True, False)
+            obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj), True, False)
+            obj_mask = tf.logical_or(obj1_mask,obj2_mask)
+            # reduce 'depth' dimension
+            # [num_targets,num_sources,max_num_paths]
+            mask_paths = tf.reduce_any(obj_mask, axis=0)
+            # [1,num_targets,1,num_sources,1,max_num_paths,1]
+            mask_paths = tf.expand_dims(tf.expand_dims(tf.expand_dims(tf.expand_dims(mask_paths, axis=3), axis=2), axis=1), axis=0)
+            # [1,num_targets,1,num_sources,1,max_num_paths,3]
+            mask_paths = tf.repeat(mask_paths, repeats=3, axis=-1)
+            v = tf.where(mask_paths, v+velocity, v)
+                
+        return v
   
     
     
@@ -1987,7 +2022,7 @@ class Scene:
         for name in value:
             if not isinstance(name, str):
                 raise ValueError('target_names must be a list of string')
-        self._target_names = tf.convert_to_tensor(value, dtype=tf.string)
+        self._target_names = value
     
     @property
     def target_velocities(self):
@@ -1998,8 +2033,8 @@ class Scene:
         if not isinstance(value, list):
             raise ValueError('target_velocities must be a list of 3D vector')
         for v in value:
-            if not isinstance(v, list):
-                raise ValueError('target_velocities must be a list of 3D vector')
+            if not isinstance(v, tuple):
+                raise ValueError('target_velocities must be a tuple of 3D vector')
             if len(v) != 3:
                 raise ValueError('target_velocities must be a list of 3D vector')
         self._target_velocities = tf.convert_to_tensor(value, dtype=tf.float32)
