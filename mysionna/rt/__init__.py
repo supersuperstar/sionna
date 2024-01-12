@@ -28,7 +28,6 @@ else:
 ############################################
 # pylint: disable=wrong-import-position
 from .scene import load_scene, Scene
-from .sensing_scene import load_sensing_scene, SensingScene
 from .camera import Camera
 from .antenna import Antenna, compute_gain, visualize, iso_pattern,\
                      dipole_pattern, hw_dipole_pattern, tr38901_pattern,\

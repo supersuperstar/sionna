@@ -35,7 +35,6 @@ from .paths import Paths
 from sionna.rt import scenes
 from sionna.utils.tensors import insert_dims
 from sensing.target import SensingTarget
-from .solver_cm_sensing import SolverCoverageMapSensing
 
 
 class Scene:
@@ -148,9 +147,6 @@ class Scene:
 
             # Solver for coverage map
             self._solver_cm = SolverCoverageMap(self, solver=self._solver_paths,
-                                                dtype=dtype)
-            # Solver for sensing coverage map
-            self._solver_cm_sensing = SolverCoverageMapSensing(self, solver=self._solver_paths,
                                                 dtype=dtype)
             # Load the cameras
             self._load_cameras()
