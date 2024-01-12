@@ -456,14 +456,6 @@ class Paths:
         if num_time_steps <= 0:
             msg = "The number of time samples must a positive integer"
             raise ValueError(msg)
-
-        if target_velocities is not None:
-            if tf.rank(target_velocities) != 7:
-                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
-            if target_velocities.shape[6] != 3:
-                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
-            if target_velocities.shape[5] != self.a.shape[-2]:
-                raise ValueError("The rank of `target_velocities` must be [1,1,1,1,1,max_num_paths,3]")
         
         # Drop previous time step dimension, if any
         if tf.rank(self.a) == 7:
@@ -499,7 +491,10 @@ class Paths:
         tx_ds = two_pi*dot(tx_velocities, k_t)/self._scene.wavelength
         rx_ds = two_pi*dot(rx_velocities, k_r)/self._scene.wavelength
         if target_velocities is not None:
-            tg_ds = two_pi*dot(target_velocities, k_r)/self._scene.wavelength
+            try:
+                tg_ds = two_pi*target_velocities/self._scene.wavelength
+            except:
+                raise ValueError("Invalid target velocities.Please get the target velocities from the method Scene.compute_target_velocities.")
             ds = tx_ds + rx_ds + 2 * tg_ds
         else:
             ds = tx_ds + rx_ds

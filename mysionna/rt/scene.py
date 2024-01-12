@@ -1889,6 +1889,7 @@ class Scene:
         
     def get_interacting_objects(self, paths:Paths):
         obj_names,wedges_names = self._get_objects_name()
+        # [max_depth,num_targets,num_sources,max_num_paths]
         objects = paths.objects
         
         # expand types to the shape of objects
@@ -1955,7 +1956,7 @@ class Scene:
         # [max_num_wedges,2]
         wedges_2_objects = self._solver_paths._wedges_objects
         mi_scene = self.mi_scene
-        # [max_num_shapes]
+        # max_num_shapes
         obj_num = len(mi_scene.shapes())
         
         # dictionary of objects' names and index
@@ -1964,9 +1965,14 @@ class Scene:
             name = s.id().split('-')[1] 
             obj_names[name] = i
         
+        # [max_num_paths]
+        types = paths.types[0]
+        # [1, 1, 1, max_num_paths]
+        types = insert_dims(types, 3, 0)
         # mask for objects and wedges
-        is_obj = tf.where(tf.logical_and(objects != -1,objects<obj_num), True, False)
-        is_wedge = tf.where(tf.logical_and(tf.logical_not(is_obj),objects!=-1), True, False)
+        is_obj = tf.where(tf.logical_and(objects != -1,tf.logical_or(types == 1,types == 3)), True, False)
+        is_wedge = tf.where(tf.logical_and(objects != -1,types == 2), True, False)
+        is_obj_or_wedge = tf.logical_or(is_obj, is_wedge)
         
         # convert wedges to objects
         wedge1 = wedges_2_objects[:,0]
@@ -1979,32 +1985,57 @@ class Scene:
         
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
         num_rx = paths.a.shape[1]
+        num_rx_ant = paths.a.shape[2]
         num_tx = paths.a.shape[3]
+        num_tx_ant = paths.a.shape[4]
         max_num_paths = paths.a.shape[5]
+        max_depth = objects.shape[0]
         
-        # [1, num_rx, 1, num_tx, 1, max_num_paths, 3]
-        v = tf.zeros([1,num_rx,1,num_tx,1,max_num_paths,3], dtype=tf.float32)
+        # [max_depth, num_rx*num_rx_ant, num_tx*num_tx_ant, max_num_paths, 3]
+        # num_rx*num_rx_ant = num_targets
+        # num_tx*num_tx_ant = num_sources
+        v = tf.zeros([max_depth,num_rx*num_rx_ant,num_tx*num_tx_ant,max_num_paths,3], dtype=tf.float32)
 
         for i,(name,velocity) in enumerate(zip(names,velocities)):
             
             idx = obj_names[name]
             # mask which paths interact with the target and the paths
             # [max_depth,num_targets,num_sources,max_num_paths]
-            obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj), True, False)
-            obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj), True, False)
+            obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj_or_wedge), True, False)
+            obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj_or_wedge), True, False)
             obj_mask = tf.logical_or(obj1_mask,obj2_mask)
             
-            # reduce 'depth' dimension
-            # [num_targets,num_sources,max_num_paths]
-            mask_paths = tf.reduce_any(obj_mask, axis=0)
-            # [1,num_targets,1,num_sources,1,max_num_paths,1]
-            mask_paths = tf.expand_dims(tf.expand_dims(tf.expand_dims(tf.expand_dims(mask_paths, axis=3), axis=2), axis=1), axis=0)
-            # [1,num_targets,1,num_sources,1,max_num_paths,3]
-            mask_paths = tf.repeat(mask_paths, repeats=3, axis=-1)
-            
+            # [max_depth,num_targets,num_sources,max_num_paths,1]
+            mask_paths = tf.expand_dims(obj_mask, axis=4)
+
             v = tf.where(mask_paths, v+velocity, v)
-                
-        return v
+        
+        # [max_depth, num_targets, num_sources, max_num_paths, 3]
+        vertices = paths.vertices
+        
+        # get rx position
+        _,rx_pos = self._solver_paths.get_positions()
+        
+        # [1, num_targets, 1, 1, 3]
+        rx_pos = tf.expand_dims(tf.expand_dims(tf.expand_dims(rx_pos, axis=1), axis=1), axis=0)
+        # [1, num_targets, num_sources, 1, 3]
+        rx_pos = tf.repeat(rx_pos, repeats=num_tx*num_tx_ant, axis=2)
+        # [1, num_targets, num_sources, max_num_paths, 3]
+        rx_pos = tf.repeat(rx_pos, repeats=max_num_paths, axis=3)
+        # [max_depth+1, num_targets, num_sources, max_num_paths, 3]
+        vertices = tf.concat([vertices,rx_pos], axis=0)
+        # [max_depth, num_targets, num_sources, max_num_paths, 3]
+        k_r = tf.math.l2_normalize(vertices[1:,...]-vertices[:-1,...], axis=-1)
+        # [max_depth, num_targets, num_sources, max_num_paths]
+        k_r_v = tf.reduce_sum(k_r * v, axis=-1)
+        # [num_targets, num_sources, max_num_paths]
+        k_r_v = tf.reduce_sum(k_r_v, axis=0)
+        # [num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths]
+        k_r_v = tf.reshape(k_r_v, [num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths])
+        # [1, num_rx, num_tx_ant, num_tx, num_tx_ant, max_num_paths]
+        k_r_v = tf.expand_dims(k_r_v, axis=0)
+        
+        return k_r_v
   
     
     
