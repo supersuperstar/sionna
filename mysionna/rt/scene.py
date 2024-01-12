@@ -1884,7 +1884,7 @@ class Scene:
         if len(self._target_names) != len(self._target_velocities):
             raise ValueError('target_names and target_velocities must be the same length')
         
-        v = self._apply_target_doppler(paths, self.target_names, self.target_velocities)
+        v = self._compute_velocities_mask(paths, self.target_names, self.target_velocities)
         
         if return_obj_names:
             paths_obj_names = self.get_interacting_objects(paths)
@@ -1952,7 +1952,7 @@ class Scene:
         
         return obj_names, wedges_names
 
-    def _apply_target_doppler(self,paths:Paths,names,velocities):
+    def _compute_velocities_mask(self,paths:Paths,names,velocities):
         
         # [max_depth,num_targets,num_sources,max_num_paths]
         objects = paths.objects
@@ -1985,19 +1985,19 @@ class Scene:
         num_rx = paths.a.shape[1]
         num_tx = paths.a.shape[3]
         max_num_paths = paths.a.shape[5]
+        
         # [1, num_rx, 1, num_tx, 1, max_num_paths, 3]
         v = tf.zeros([1,num_rx,1,num_tx,1,max_num_paths,3], dtype=tf.float32)
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+
         for i,(name,velocity) in enumerate(zip(names,velocities)):
-            # expand name to the shape of paths_obj_names
             
             idx = obj_names[name]
-            idx_fill = tf.fill(objects.shape, idx)
             # mask which paths interact with the target and the paths
             # [max_depth,num_targets,num_sources,max_num_paths]
             obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj), True, False)
             obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj), True, False)
             obj_mask = tf.logical_or(obj1_mask,obj2_mask)
+            
             # reduce 'depth' dimension
             # [num_targets,num_sources,max_num_paths]
             mask_paths = tf.reduce_any(obj_mask, axis=0)
@@ -2005,6 +2005,7 @@ class Scene:
             mask_paths = tf.expand_dims(tf.expand_dims(tf.expand_dims(tf.expand_dims(mask_paths, axis=3), axis=2), axis=1), axis=0)
             # [1,num_targets,1,num_sources,1,max_num_paths,3]
             mask_paths = tf.repeat(mask_paths, repeats=3, axis=-1)
+            
             v = tf.where(mask_paths, v+velocity, v)
                 
         return v

@@ -498,8 +498,11 @@ class Paths:
         # [batch_dim, num_rx, 1, num_tx, 1, max_num_paths]
         tx_ds = two_pi*dot(tx_velocities, k_t)/self._scene.wavelength
         rx_ds = two_pi*dot(rx_velocities, k_r)/self._scene.wavelength
-        tg_ds = two_pi*dot(target_velocities, k_r)/self._scene.wavelength
-        ds = tx_ds + rx_ds + 2 * tg_ds
+        if target_velocities is not None:
+            tg_ds = two_pi*dot(target_velocities, k_r)/self._scene.wavelength
+            ds = tx_ds + rx_ds + 2 * tg_ds
+        else:
+            ds = tx_ds + rx_ds
         # Expand for the time sample dimension
         # [batch_dim, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, 1]
         # or
