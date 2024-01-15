@@ -145,9 +145,9 @@ class SensingScene():
                 scene.remove(f"tx_{tx_idx}")
             scene.add(tx)
             # Set transmitter look direction
-            rx_tmp = Receiver(name="rx_tmp",position=self._tx_look_dir[tx_idx,:])
-            tx.look_at(rx_tmp)
-            scene.remove("rx_tmp")
+            # rx_tmp = Receiver(name="rx_tmp",position=self._tx_look_dir[tx_idx,:])
+            tx.look_at(self._tx_look_dir[tx_idx,:])
+            # scene.remove("rx_tmp")
         # Compute paths for receivers
         num = 0
         i = 0
@@ -300,6 +300,16 @@ class SensingScene():
         return tf.abs(crb[a_sortidx[-1]])
     
     def _crb_delay1(self,snr,a,tau):
+        """_summary_
+
+        Args:
+            snr (_type_): _description_
+            a (_type_): _description_
+            tau (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
         frequency = self._scene.frequency
         tau = tau[a!=0]
         a = a[a!=0]

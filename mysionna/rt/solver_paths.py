@@ -951,15 +951,14 @@ class SolverPaths(SolverBase):
         # and targets (which capture the rays)
         #################################################
 
-        if not self._scene.synthetic_array:
-            # Relative positions of the antennas of the transmitters and
-            # receivers
-            # rx_rel_ant_pos: [num_rx, rx_array_size, 3], tf.float
-            #     Relative positions of the receivers antennas
-            # tx_rel_ant_pos: [num_tx, rx_array_size, 3], tf.float
-            #     Relative positions of the transmitters antennas
-            rx_rel_ant_pos, tx_rel_ant_pos =\
-                self._get_antennas_relative_positions(rx_rot_mat, tx_rot_mat)
+        # Relative positions of the antennas of the transmitters and
+        # receivers
+        # rx_rel_ant_pos: [num_rx, rx_array_size, 3], tf.float
+        #     Relative positions of the receivers antennas
+        # tx_rel_ant_pos: [num_tx, rx_array_size, 3], tf.float
+        #     Relative positions of the transmitters antennas
+        rx_rel_ant_pos, tx_rel_ant_pos =\
+            self._get_antennas_relative_positions(rx_rot_mat, tx_rot_mat)
 
         # Transmitters and receivers positions
         # [num_tx, 3]
@@ -969,22 +968,14 @@ class SolverPaths(SolverBase):
         rx_pos = [rx.position for rx in self._scene.receivers.values()]
         rx_pos = tf.stack(rx_pos, axis=0)
 
-        if self._scene.synthetic_array:
-            # With synthetic arrays, each radio device corresponds to a single
-            # endpoint (source or target)
-            # [num_sources = num_tx, 3]
-            sources = tx_pos
-            # [num_targets = num_rx, 3]
-            targets = rx_pos
-        else:
-            # [num_tx, tx_array_size, 3]
-            sources = tf.expand_dims(tx_pos, axis=1) + tx_rel_ant_pos
-            # [num_sources = num_tx*tx_array_size, 3]
-            sources = tf.reshape(sources, [-1, 3])
-            # [num_rx, rx_array_size, 3]
-            targets = tf.expand_dims(rx_pos, axis=1) + rx_rel_ant_pos
-            # [num_targets = num_rx*rx_array_size, 3]
-            targets = tf.reshape(targets, [-1, 3])
+        # [num_tx, tx_array_size, 3]
+        sources = tf.expand_dims(tx_pos, axis=1) + tx_rel_ant_pos
+        # [num_sources = num_tx*tx_array_size, 3]
+        sources = tf.reshape(sources, [-1, 3])
+        # [num_rx, rx_array_size, 3]
+        targets = tf.expand_dims(rx_pos, axis=1) + rx_rel_ant_pos
+        # [num_targets = num_rx*rx_array_size, 3]
+        targets = tf.reshape(targets, [-1, 3])
         return sources, targets
     
     ##################################################################

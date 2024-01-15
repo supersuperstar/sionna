@@ -1799,80 +1799,16 @@ class Scene:
         # pylint: disable=line-too-long
         """_summary_
 
-        Input
-        ------
-        max_depth : int
-            Maximum depth (i.e., number of bounces) allowed for tracing the
-            paths. Defaults to 3.
+        Args:
+            paths (_type_): _description_
+            return_obj_names (bool, optional): _description_. Defaults to False.
 
-        method : str ("exhaustive"|"fibonacci")
-            Ray tracing method to be used.
-            The "exhaustive" method tests all possible combinations of primitives.
-            This method is not compatible with scattering.
-            The "fibonacci" method uses a shoot-and-bounce approach to find
-            candidate chains of primitives. Initial ray directions are chosen
-            according to a Fibonacci lattice on the unit sphere. This method can be
-            applied to very large scenes. However, there is no guarantee that
-            all possible paths are found.
-            Defaults to "fibonacci".
+        Raises:
+            ValueError: _description_
+            ValueError: _description_
 
-        num_samples : int
-            Number of rays to trace in order to generate candidates with
-            the "fibonacci" method.
-            This number is split equally among the different transmitters
-            (when using synthetic arrays) or transmit antennas (when not using
-            synthetic arrays).
-            This parameter is ignored when using the exhaustive method.
-            Tracing more rays can lead to better precision
-            at the cost of increased memory requirements.
-            Defaults to 1e6.
-
-        los : bool
-            If set to `True`, then the LoS paths are computed.
-            Defaults to `True`.
-
-        reflection : bool
-            If set to `True`, then the reflected paths are computed.
-            Defaults to `True`.
-
-        diffraction : bool
-            If set to `True`, then the diffracted paths are computed.
-            Defaults to `False`.
-
-        scattering : bool
-            if set to `True`, then the scattered paths are computed.
-            Only works with the Fibonacci method.
-            Defaults to `False`.
-
-        scat_keep_prob : float
-            Probability with which a scattered path is kept.
-            This is helpful to reduce the number of computed scattered
-            paths, which might be prohibitively high in some scenes.
-            Must be in the range (0,1). Defaults to 0.001.
-
-        edge_diffraction : bool
-            If set to `False`, only diffraction on wedges, i.e., edges that
-            connect two primitives, is considered.
-            Defaults to `False`.
-
-        check_scene : bool
-            If set to `True`, checks that the scene is well configured before
-            computing the paths. This can add a significant overhead.
-            Defaults to `True`.
-
-        scat_random_phases : bool
-            If set to `True` and if scattering is enabled, random uniform phase
-            shifts are added to the scattered paths.
-            Defaults to `True`.
-
-        testing : bool
-            If set to `True`, then additional data is returned for testing.
-            Defaults to `False`.
-
-        Output
-        ------
-        :paths : :class:`~sionna.rt.Paths`
-            Simulated paths
+        Returns:
+            _type_: _description_
         """
         # check if targets are set correctly
         if self._target_names is None or self._target_velocities is None:
@@ -1956,8 +1892,10 @@ class Scene:
         # [max_num_wedges,2]
         wedges_2_objects = self._solver_paths._wedges_objects
         mi_scene = self.mi_scene
-        # max_num_shapes
-        obj_num = len(mi_scene.shapes())
+        # mask if the path between a target and a source is valid
+        # [1, num_targets, num_sources, max_num_paths]
+        mask_tg_sr = paths.targets_sources_mask
+        mask_tg_sr = tf.expand_dims(tf.expand_dims(mask_tg_sr, axis=-1), axis=0)
         
         # dictionary of objects' names and index
         obj_names = {}
@@ -1994,7 +1932,7 @@ class Scene:
         # [max_depth, num_rx*num_rx_ant, num_tx*num_tx_ant, max_num_paths, 3]
         # num_rx*num_rx_ant = num_targets
         # num_tx*num_tx_ant = num_sources
-        v = tf.zeros([max_depth,num_rx*num_rx_ant,num_tx*num_tx_ant,max_num_paths,3], dtype=tf.float32)
+        v = tf.zeros([max_depth, num_rx*num_rx_ant, num_tx*num_tx_ant, max_num_paths, 3], dtype=tf.float32)
 
         for i,(name,velocity) in enumerate(zip(names,velocities)):
             
@@ -2006,16 +1944,23 @@ class Scene:
             obj_mask = tf.logical_or(obj1_mask,obj2_mask)
             
             # [max_depth,num_targets,num_sources,max_num_paths,1]
-            mask_paths = tf.expand_dims(obj_mask, axis=4)
-
-            v = tf.where(mask_paths, v+velocity, v)
+            mask_paths = tf.expand_dims(obj_mask, axis=-1)
+            # [max_depth,num_targets,num_sources,max_num_paths,1]
+            mask = tf.logical_and(mask_tg_sr, mask_paths)
+            
+            v = tf.where(mask, v+velocity, v)
         
         # [max_depth, num_targets, num_sources, max_num_paths, 3]
         vertices = paths.vertices
-        
+        if self.synthetic_array:
+            vertices = tf.repeat(vertices, repeats=num_rx_ant, axis=1)
+            vertices = tf.repeat(vertices, repeats=num_tx_ant, axis=2)
         # get rx position
+        # [num_targets = num_rx*rx_array_size, 3]
         _,rx_pos = self._solver_paths.get_positions()
-        
+        if rx_pos.shape[0] != num_rx*num_rx_ant:
+            # consider cross / VH polarization
+            rx_pos = tf.repeat(rx_pos, repeats=int(num_rx*num_rx_ant/rx_pos.shape[0]), axis=0)
         # [1, num_targets, 1, 1, 3]
         rx_pos = tf.expand_dims(tf.expand_dims(tf.expand_dims(rx_pos, axis=1), axis=1), axis=0)
         # [1, num_targets, num_sources, 1, 3]

@@ -425,9 +425,9 @@ class Paths:
             receivers [m/s].
             Defaults to `[0,0,0]`.
         
-        target_velocities : [1, 1, 1, 1, 1, max_num_paths, 3], tf.float | `None`
-            Velocity vectors :math:`(v_\text{x}, v_\text{y}, v_\text{z})` of all
-            targets [m/s].
+        target_velocities : [1, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths], tf.float | `None`
+            Velocity vectors :math:`k_r * (v_\text{x}, v_\text{y}, v_\text{z})` of all
+            targets.
             Defaults to `None`.
         """
 
