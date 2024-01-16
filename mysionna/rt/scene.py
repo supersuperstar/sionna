@@ -1947,14 +1947,20 @@ class Scene:
             mask_paths = tf.expand_dims(obj_mask, axis=-1)
             # [max_depth,num_targets,num_sources,max_num_paths,1]
             mask = tf.logical_and(mask_tg_sr, mask_paths)
-            
+            if mask.shape[1] != num_rx*num_rx_ant:
+                # consider cross / VH polarization
+                mask = tf.repeat(mask, repeats=int(num_rx*num_rx_ant/mask.shape[1]), axis=1)
+            if mask.shape[2] != num_tx*num_tx_ant:
+                # consider cross / VH polarization
+                mask = tf.repeat(mask, repeats=int(num_tx*num_tx_ant/mask.shape[2]), axis=2)
             v = tf.where(mask, v+velocity, v)
         
         # [max_depth, num_targets, num_sources, max_num_paths, 3]
         vertices = paths.vertices
-        if self.synthetic_array:
-            vertices = tf.repeat(vertices, repeats=num_rx_ant, axis=1)
-            vertices = tf.repeat(vertices, repeats=num_tx_ant, axis=2)
+        if vertices.shape[1] != num_rx*num_rx_ant:
+            vertices = tf.repeat(vertices, repeats=int(num_rx*num_rx_ant/vertices.shape[1]), axis=1)
+        if vertices.shape[2] != num_tx*num_tx_ant:
+            vertices = tf.repeat(vertices, repeats=int(num_tx*num_tx_ant/vertices.shape[2]), axis=2)
         # get rx position
         # [num_targets = num_rx*rx_array_size, 3]
         _,rx_pos = self._solver_paths.get_positions()
