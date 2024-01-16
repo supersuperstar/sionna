@@ -1901,7 +1901,7 @@ class Scene:
         obj_names = {}
         for i,s in enumerate(mi_scene.shapes()):
             name = s.id().split('-')[1] 
-            obj_names[name] = i
+            obj_names[name] = i 
         
         # [max_num_paths]
         types = paths.types[0]
