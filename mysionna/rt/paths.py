@@ -9,6 +9,7 @@ Dataclass that stores paths
 import tensorflow as tf
 import os
 import numpy as np
+import open3d as o3d
 
 from . import scene as scene_module
 from sionna.utils.tensors import expand_to_rank, insert_dims
@@ -663,6 +664,158 @@ class Paths:
 
         return a,tau
 
+    def crb_delay(self, snr=10):
+        """compute the crb of the delay estimation
+
+        Args:
+            snr (int, optional): SNR. Defaults to 10.
+
+        Returns:
+            crb (float32): [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+            the crb of the delay estimation,set to 1 if the path doesn't exist
+        """
+        a = self._a
+        tau = self._tau
+        num_rx = a.shape[1]
+        num_rx_ant = a.shape[2]
+        num_tx = a.shape[3]
+        num_tx_ant = a.shape[4]
+        max_num_paths = a.shape[5]
+        num_time_steps = a.shape[6]
+        frequency = self._scene.frequency
+        
+        if self._scene.synthetic_array:
+            tau = tf.expand_dims(tau, axis=3)
+            tau = tf.expand_dims(tau, axis=2)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths*max_num_paths]
+        tau_i = tf.repeat(tau,max_num_paths,axis=-1)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        tau_i = tf.reshape(tau_i, [tau.shape[0],tau.shape[1],tau.shape[2],tau.shape[3],tau.shape[4],max_num_paths,max_num_paths])
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        tau_j = tf.transpose(tau_i,perm=[0,1,2,3,4,6,5])
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        tau_i_mine_j = tau_i- tau_j
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        tau_i_mul_j = tau_i* tau_j
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths, 1]
+        tau_i_mine_j = tf.expand_dims(tau_i_mine_j, axis=-1)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths, 1]
+        tau_i_mul_j = tf.expand_dims(tau_i_mul_j, axis=-1)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, 1, max_num_paths, num_time_steps]
+        alpha = tf.expand_dims(a, axis=-2)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, 1, max_num_paths]
+        alpha_1 = tf.transpose(alpha,perm=[0,1,2,3,4,7,5,6])
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths, 1]
+        alpha_2 = tf.transpose(alpha,perm=[0,1,2,3,4,7,6,5])
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths, max_num_paths]
+        alpha_ij = tf.matmul(alpha_1,alpha_2)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths, num_time_steps]
+        alpha_ij = tf.transpose(alpha_ij,perm=[0,1,2,3,4,6,7,5])
+        one = tf.ones((max_num_paths,max_num_paths))
+        one = insert_dims(one, 5, 0)
+        # [1,1,1,1,1, max_num_paths, max_num_paths,1]
+        one = insert_dims(one, 1, -1)
+        F_alpha= 2*snr*tf.math.divide_no_nan(tf.math.abs(alpha_ij),(tau_i_mul_j**2))
+        F_cos = (one+4*(np.pi**2)*(frequency) * tau_i_mul_j)*tf.math.cos(2*np.pi*frequency*tau_i_mine_j)
+        F_sin = 2*np.pi*frequency*tau_i_mine_j*tf.math.sin(2*np.pi*frequency*tau_i_mine_j)
+        F = F_alpha*(F_cos+F_sin)
+        del alpha,alpha_1,alpha_2,alpha_ij,tau_i_mine_j,tau_i_mul_j,tau_i,tau_j,F_alpha,F_cos,F_sin,one
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths, max_num_paths]
+        F = tf.transpose(F,perm=[0,1,2,3,4,7,5,6])
+        F = tf.reshape(F, [-1,max_num_paths,max_num_paths]) * 1e-18
+        crb = tf.linalg.diag_part(tf.linalg.pinv(F))
+        crb = tf.abs(crb)
+        # for the paths that are not valid, set the crb to 1
+        crb = tf.where(crb==0,1,crb)
+        
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths]
+        crb = tf.reshape(crb, [-1,num_rx,num_rx_ant,num_tx,num_tx_ant,num_time_steps,max_num_paths])
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+        crb = tf.transpose(crb,perm=[0,1,2,3,4,6,5])
+        return crb
+        
+    def export_crb(self,crb,filename:str,
+                   color_start = np.array([[60/255, 5/255, 80/255]]),
+                   color_mid = np.array([[35/255, 138/255, 141/255]]),
+                   color_end = np.array([[1, 1, 35./255]])):
+        """_summary_
+
+        Args:
+            crb (_type_): get from the method Paths.crb_delay
+            filename (str): recommend to use .xyzrgb as the suffix
+            color_start (_type_, optional): colorbar. Defaults to np.array([[60/255, 5/255, 80/255]]).
+            color_mid (_type_, optional): colorbar. Defaults to np.array([[35/255, 138/255, 141/255]]).
+            color_end (_type_, optional): colorbar. Defaults to np.array([[1, 1, 35./255]]).
+        """
+        objects = self._objects
+        vertices = self._vertices
+        mask = self._mask
+        num_rx = self._a.shape[1]
+        num_rx_ant = self._a.shape[2]
+        num_tx = self._a.shape[3]
+        num_tx_ant = self._a.shape[4]
+        max_num_paths = self._a.shape[5]
+        num_time_steps = self._a.shape[6]
+        max_depth = objects.shape[0]
+        num_targets = objects.shape[1]
+        num_sources = objects.shape[2]
+        
+        # consider VH/cross-polarization
+        if objects.shape[1] != num_rx*num_rx_ant:
+            objects = tf.repeat(objects,int(num_rx*num_rx_ant/num_targets),axis=1)
+        if objects.shape[2] != num_tx*num_tx_ant:
+            objects = tf.repeat(objects,int(num_tx*num_tx_ant/num_sources),axis=2)
+        objects = tf.reshape(objects, [max_depth,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths])
+        
+        if vertices.shape[1] != num_rx*num_rx_ant:
+            vertices = tf.repeat(vertices,int(num_rx*num_rx_ant/num_targets),axis=1)
+        if vertices.shape[2] != num_tx*num_tx_ant:
+            vertices = tf.repeat(vertices,int(num_tx*num_tx_ant/num_sources),axis=2)
+        vertices = tf.reshape(vertices, [max_depth,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,3])
+        
+        if mask.shape[1] != num_rx*num_rx_ant:
+            mask = tf.repeat(mask,int(num_rx*num_rx_ant/num_targets),axis=1)
+        if mask.shape[2] != num_tx*num_tx_ant:
+            mask = tf.repeat(mask,int(num_tx*num_tx_ant/num_sources),axis=2)
+        mask = tf.reshape(mask, [-1,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths])
+        # reduce num_time_steps dimension
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths]
+        crb_ = tf.reduce_min(crb,axis=-1)
+        
+        crb_ = tf.where(mask,crb_,1)
+        crb_ = tf.repeat(crb_,max_depth,axis=0)
+        # mask out the paths that are valid
+        indices = tf.where(objects != -1)
+        
+        # [valid_paths, 3]
+        v = tf.gather_nd(vertices, indices)
+        # [valid_paths]
+        c = tf.gather_nd(crb_, indices)
+        
+        c = tf.where(c==0,1,c)
+        c = tf.where(c==1,0,c)
+        indices = tf.where(c != 0)
+        c = tf.gather_nd(c, indices)
+        v = tf.gather_nd(v, indices)
+        c = np.log10(c)
+        
+        c = (c - np.min(c)) / (np.max(c) - np.min(c))
+        
+        c_color = np.expand_dims(c, axis=-1)
+        c_color = np.repeat(c_color,3,axis=-1)
+        
+        color_start = np.repeat(color_start,c.shape[0],axis=0)
+        color_mid = np.repeat(color_mid,c.shape[0],axis=0)
+        color_end = np.repeat(color_end,c.shape[0],axis=0)
+        
+        c_color = np.where(c_color<0.5,color_start+(color_mid-color_start)*c_color*2,color_mid+(color_end-color_mid)*(c_color-0.5)*2)
+        
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(v.numpy())
+        pcd.colors = o3d.utility.Vector3dVector(c_color)
+        return o3d.io.write_point_cloud(filename, pcd)
+        
+        
     #######################################################
     # Internal methods and properties
     #######################################################

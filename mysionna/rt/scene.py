@@ -34,7 +34,6 @@ from .utils import expand_to_rank
 from .paths import Paths
 from sionna.rt import scenes
 from sionna.utils.tensors import insert_dims
-from sensing.target import SensingTarget
 
 
 class Scene:
@@ -93,7 +92,7 @@ class Scene:
             # Scene objects
             instance._scene_objects = {}
             # Sensing targets
-            instance._sensing_targets = {}
+
             # By default, the antenna arrays is applied synthetically
             instance._synthetic_array = True
             # Holds a reference to the interactive preview widget
@@ -244,14 +243,6 @@ class Scene:
             of radio materials
         """
         return dict(self._radio_materials)
-
-    @property
-    def sensing_targets(self):
-        """
-        `dict` (read-only), { "name", :class:`~sionna.rt.SensingTarget`} : Dictionary
-            of sensing targets
-        """
-        return dict(self._sensing_targets)
     
     @property
     def objects(self):
@@ -334,8 +325,6 @@ class Scene:
             return self._scene_objects[name]
         if name in self._cameras:
             return self._cameras[name]
-        if name in self._sensing_targets:
-            return self._sensing_targets[name]
         return None
 
     def add(self, item):
@@ -387,8 +376,6 @@ class Scene:
         elif isinstance(item, Camera):
             self._cameras[name] = item
             item.scene = self
-        elif isinstance(item, SensingTarget):
-            self._sensing_targets[name] = item
     
     def remove(self, name):
         # pylint: disable=line-too-long
@@ -426,9 +413,6 @@ class Scene:
                         " object"
                 raise ValueError(msg)
             del self._radio_materials[name]
-
-        elif isinstance(item, SensingTarget):
-            del self._sensing_targets[name]
         
         else:
             msg = "Only Transmitters, Receivers, Cameras, or RadioMaterials"\
@@ -1674,7 +1658,6 @@ class Scene:
         self._cameras.clear()
         self._radio_materials.clear()
         self._scene_objects.clear()
-        self._sensing_targets.clear()
         self._tx_array = None
         self._rx_array = None
         self._preview_widget = None
@@ -1787,8 +1770,7 @@ class Scene:
         used = ((name in self._transmitters)
              or (name in self._receivers)
              or (name in self._radio_materials)
-             or (name in self._scene_objects)
-             or (name in self._sensing_targets))
+             or (name in self._scene_objects))
         return used
 
     ##############################
@@ -1988,8 +1970,6 @@ class Scene:
         
         return k_r_v
   
-    
-    
     @property
     def target_names(self):
         return self._target_names
