@@ -340,8 +340,8 @@ class Scene:
             Item to add to the scene
         """
         if ( (not isinstance(item, OrientedObject))
-         and (not isinstance(item, RadioMaterial)) and(not isinstance(item, SensingTarget))):
-            err_msg = "The input must be a Transmitter, Receiver, Camera, SensingTarget, or"\
+         and (not isinstance(item, RadioMaterial))):
+            err_msg = "The input must be a Transmitter, Receiver, Camera, or"\
                       " RadioMaterial"
             raise ValueError(err_msg)
 
