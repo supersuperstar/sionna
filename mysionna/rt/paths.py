@@ -755,7 +755,6 @@ class Paths:
         num_tx = self._a.shape[3]
         num_tx_ant = self._a.shape[4]
         max_num_paths = self._a.shape[5]
-        num_time_steps = self._a.shape[6]
         max_depth = objects.shape[0]
         num_targets = objects.shape[1]
         num_sources = objects.shape[2]

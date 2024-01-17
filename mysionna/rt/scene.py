@@ -15,6 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import mitsuba as mi
 import tensorflow as tf
+import numpy as np
 
 from .antenna_array import AntennaArray
 from .camera import Camera
@@ -1832,7 +1833,131 @@ class Scene:
         paths_obj_names = tf.tensor_scatter_nd_update(paths_obj_names, indices_ref_scatt, updates_ref_scatt)
 
         return paths_obj_names
+    
+    def coverage_map_sensing(self,map_center, map_size_x, map_size_y, cell_size, look_at=[0,0,0],max_sample_each_turn=1000,
+                             max_depth=3,num_samples=1000000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scatter_keep_prob=0.001,
+                             subcarrier_spacing=15e3,num_time_steps=14):
+        # compute cell positions
+        cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
+        cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
+        cell_positions = np.zeros((cell_num_x, cell_num_y, 3))
+        # fill x
+        x_fill = np.arange(0,cell_num_x) * cell_size + map_center[0] - map_size_x/2
+        x_fill = np.tile(x_fill,cell_num_y)
+        cell_positions[:,:,0] = x_fill.reshape([cell_num_y,cell_num_x]).transpose()
+        # fill y
+        y_fill = np.arange(0,cell_num_y) * cell_size + map_center[1] - map_size_y/2
+        y_fill = np.tile(y_fill,cell_num_x)
+        cell_positions[:,:,1] = y_fill.reshape([cell_num_x,cell_num_y])
+        # fill z
+        cell_positions[:,:,2] = np.tile(map_center[2],(cell_num_x,cell_num_y))
+        cell_pos = tf.constant(cell_positions, dtype=tf.float32)
+        # [num_cells_x*num_cells_y, 3]
+        cell_pos = tf.reshape(cell_pos, [-1, 3])  
         
+        num = cell_pos.shape[0]
+        idx = 0
+        # add tx/rx
+        for i in range(0,max(num,max_sample_each_turn)): 
+            tx_name = f"tx-{i}"
+            rx_name = f"rx-{i}"
+            tx = Transmitter(tx_name, position=cell_pos[idx])
+            tx.look_at(look_at)
+            rx = Receiver(rx_name, position=cell_pos[idx])
+            rx.look_at(look_at)
+            self.add(tx)
+            self.add(rx) 
+        
+        
+        # dictionary of objects' names and index
+        obj_names = {}
+        for i,s in enumerate(self._scene.shapes()):
+            name = s.id().split('-')[1] 
+            obj_names[name] = i 
+        
+        start = 0  
+        crbs=[]
+        while start < num:
+            if start + max_sample_each_turn > num:
+                end = num
+            else:
+                end = start + max_sample_each_turn
+            # update positions
+            for i in range(0,min(max_sample_each_turn,end-start)):
+                self.transmitters.values()[i].position = cell_pos[start+i]
+                self.receivers.values()[i].position = cell_pos[start+i]
+            crbs.append([])
+            path = self.compute_paths(max_depth=max_depth,num_samples=num_samples,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,scatter_keep_prob=scatter_keep_prob)
+            v=self.compute_target_velocities(path)
+            path.apply_doppler(sampling_frequency=subcarrier_spacing,num_time_steps=num_time_steps,target_velocities=v)
+            # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+            crb = path.crb_delay()
+            # [max_depth,num_targets,num_sources,max_num_paths]
+            objects = path.objects
+            # [max_num_wedges,2]
+            wedges_2_objects = self._solver_paths._wedges_objects
+            # mask if the path between a target and a source is valid
+            # [1, num_targets, num_sources, max_num_paths]
+            mask_tg_sr = path.targets_sources_mask
+            mask_tg_sr = tf.expand_dims(tf.expand_dims(mask_tg_sr, axis=-1), axis=0)
+            # [max_num_paths]
+            types = path.types[0]
+            # [1, 1, 1, max_num_paths]
+            types = insert_dims(types, 3, 0)
+            # mask for objects and wedges
+            is_obj = tf.where(tf.logical_and(objects != -1,tf.logical_or(types == 1,types == 3)), True, False)
+            is_wedge = tf.where(tf.logical_and(objects != -1,types == 2), True, False)
+            is_obj_or_wedge = tf.logical_or(is_obj, is_wedge)
+            
+            num_rx = path.a.shape[1]
+            num_rx_ant = path.a.shape[2]
+            num_tx = path.a.shape[3]
+            num_tx_ant = path.a.shape[4]
+            max_num_paths = path.a.shape[5]
+            max_depth = objects.shape[0]
+            
+            # convert wedges to objects
+            wedge1 = wedges_2_objects[:,0]
+            wedge2 = wedges_2_objects[:,1]
+            indices = tf.where(is_wedge)
+            updates1 = tf.gather(wedge1, tf.reshape(objects[is_wedge], [-1]))
+            updates2 = tf.gather(wedge2, tf.reshape(objects[is_wedge], [-1]))
+            objects_wedge1 = tf.tensor_scatter_nd_update(objects, indices, updates1)
+            objects_wedge2 = tf.tensor_scatter_nd_update(objects, indices, updates2)
+            for name in self.target_names:
+                id = obj_names[name]
+                # mask which paths interact with the target and the paths
+                # [max_depth,num_targets,num_sources,max_num_paths]
+                obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj_or_wedge), True, False)
+                obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj_or_wedge), True, False)
+                obj_mask = tf.logical_or(obj1_mask,obj2_mask)
+                
+                # [max_depth,num_targets,num_sources,max_num_paths,1]
+                mask_paths = tf.expand_dims(obj_mask, axis=-1)
+                # [max_depth,num_targets,num_sources,max_num_paths,1]
+                mask = tf.logical_and(mask_tg_sr, mask_paths)
+                if mask.shape[1] != num_rx*num_rx_ant:
+                    # consider cross / VH polarization
+                    mask = tf.repeat(mask, repeats=int(num_rx*num_rx_ant/mask.shape[1]), axis=1)
+                if mask.shape[2] != num_tx*num_tx_ant:
+                    # consider cross / VH polarization
+                    mask = tf.repeat(mask, repeats=int(num_tx*num_tx_ant/mask.shape[2]), axis=2)
+                # [max_depth,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
+                mask = tf.reshape(mask, [max_depth, num_rx,num_rx_ant, num_tx,num_tx_ant, max_num_paths, 1])
+                # [1,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
+                mask = tf.reduce_any(mask, axis=0, keepdims=True)
+                indices = tf.where(mask)
+                crb_target = tf.where(mask, crb, 1)
+                crb_target = tf.reduce_min(crb_target, axis=6)
+                crb_target = tf.reduce_min(crb_target, axis=5)
+                crb_target = tf.reduce_min(crb_target, axis=4)
+                crb_target = tf.reduce_min(crb_target, axis=2)
+                crbs[-1].append(crb_target)
+        
+        return crbs
+                
+            
+            
     def _get_objects_name(self):
         """find the names of objects in the xml file,
         objects' names must be with the type 'mesh-name-XXX',XXX is the meterial or other string.
@@ -1937,7 +2062,7 @@ class Scene:
                 mask = tf.repeat(mask, repeats=int(num_tx*num_tx_ant/mask.shape[2]), axis=2)
             v = tf.where(mask, v+velocity, v)
         
-        # [max_depth, num_targets, num_sources, max_num_paths, 3]
+        # [max_depth, num_rx*num_rx_ant, num_rx*num_rx_ant, max_num_paths, 3]
         vertices = paths.vertices
         if vertices.shape[1] != num_rx*num_rx_ant:
             vertices = tf.repeat(vertices, repeats=int(num_rx*num_rx_ant/vertices.shape[1]), axis=1)
