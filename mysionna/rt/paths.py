@@ -664,18 +664,41 @@ class Paths:
 
         return a,tau
 
-    def crb_delay(self, snr=10):
+    def crb_delay(self, snr=10,diag=False):
         """compute the crb of the delay estimation
 
         Args:
             snr (int, optional): SNR. Defaults to 10.
-
+            diag (bool, optional): if True, return the diagonal of the crb matrix. Defaults to False.
+                Suggest set diag to True only in single BS sensing case.
         Returns:
             crb (float32): [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
             the crb of the delay estimation,set to 1 if the path doesn't exist
         """
         a = self._a
         tau = self._tau
+        
+        if self._scene.synthetic_array:
+            tau = tf.expand_dims(tau, axis=3)
+            tau = tf.expand_dims(tau, axis=2)
+            
+        if diag: 
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,num_tx]
+            a = tf.transpose(a,perm=[0,2,4,5,6,1,3])
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx]
+            a = tf.linalg.diag_part(a)
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,1]
+            a = tf.expand_dims(a, axis=-1)
+            a = tf.transpose(a,perm=[0,5,1,6,2,3,4])
+            
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,,num_rx,num_tx]
+            tau = tf.transpose(tau,perm=[0,2,4,5,1,3])
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_rx]
+            tau = tf.linalg.diag_part(tau)
+            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_rx,1]
+            tau = tf.expand_dims(tau, axis=-1)
+            tau = tf.transpose(tau,perm=[0,4,1,5,2,3])
+            
         num_rx = a.shape[1]
         num_rx_ant = a.shape[2]
         num_tx = a.shape[3]
@@ -684,24 +707,22 @@ class Paths:
         num_time_steps = a.shape[6]
         frequency = self._scene.frequency
         
-        if self._scene.synthetic_array:
-            tau = tf.expand_dims(tau, axis=3)
-            tau = tf.expand_dims(tau, axis=2)
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths*max_num_paths]
+        
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths*max_num_paths]
         tau_i = tf.repeat(tau,max_num_paths,axis=-1)
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths]
         tau_i = tf.reshape(tau_i, [tau.shape[0],tau.shape[1],tau.shape[2],tau.shape[3],tau.shape[4],max_num_paths,max_num_paths])
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths]
         tau_j = tf.transpose(tau_i,perm=[0,1,2,3,4,6,5])
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths]
         tau_i_mine_j = tau_i- tau_j
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths]
         tau_i_mul_j = tau_i* tau_j
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths, 1]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths, 1]
         tau_i_mine_j = tf.expand_dims(tau_i_mine_j, axis=-1)
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, max_num_paths, 1]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, max_num_paths, max_num_paths, 1]
         tau_i_mul_j = tf.expand_dims(tau_i_mul_j, axis=-1)
-        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, 1, max_num_paths, num_time_steps]
+        # [batch_size, num_rx, num_rx_ant/1, num_tx, num_tx_ant/1, 1, max_num_paths, num_time_steps]
         alpha = tf.expand_dims(a, axis=-2)
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, 1, max_num_paths]
         alpha_1 = tf.transpose(alpha,perm=[0,1,2,3,4,7,5,6])
@@ -724,14 +745,14 @@ class Paths:
         F = tf.transpose(F,perm=[0,1,2,3,4,7,5,6])
         F = tf.reshape(F, [-1,max_num_paths,max_num_paths]) * 1e-18
         crb = tf.linalg.diag_part(tf.linalg.pinv(F))
-        crb = tf.abs(crb)
-        # for the paths that are not valid, set the crb to 1
-        crb = tf.where(crb==0,1,crb)
+        crb = tf.abs(crb) * 1e-18
         
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths]
         crb = tf.reshape(crb, [-1,num_rx,num_rx_ant,num_tx,num_tx_ant,num_time_steps,max_num_paths])
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
         crb = tf.transpose(crb,perm=[0,1,2,3,4,6,5])
+        # for the paths that are not valid, set the crb to 1
+        crb = tf.where(crb==0.0,1.0,crb)
         return crb
         
     def export_crb(self,crb,filename:str,
@@ -797,7 +818,7 @@ class Paths:
         c = tf.gather_nd(c, indices)
         v = tf.gather_nd(v, indices)
         c = np.log10(c)
-        
+        c = np.abs(c)
         c = (c - np.min(c)) / (np.max(c) - np.min(c))
         
         c_color = np.expand_dims(c, axis=-1)

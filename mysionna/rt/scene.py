@@ -1834,8 +1834,8 @@ class Scene:
 
         return paths_obj_names
     
-    def coverage_map_sensing(self,map_center, map_size_x, map_size_y, cell_size, look_at=[0,0,0],max_sample_each_turn=1000,
-                             max_depth=3,num_samples=1000000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scatter_keep_prob=0.001,
+    def coverage_map_sensing(self,map_center, map_size_x, map_size_y, cell_size, look_at=[0,0,0],batch_size=100,singleBS=True,
+                             max_depth=3,num_samples=100000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scat_keep_prob=0.001,
                              subcarrier_spacing=15e3,num_time_steps=14):
         # compute cell positions
         cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
@@ -1856,16 +1856,19 @@ class Scene:
         cell_pos = tf.reshape(cell_pos, [-1, 3])  
         
         num = cell_pos.shape[0]
-        idx = 0
         # add tx/rx
-        for i in range(0,max(num,max_sample_each_turn)): 
+        for i in range(0,min(num,batch_size)): 
             tx_name = f"tx-{i}"
             rx_name = f"rx-{i}"
-            tx = Transmitter(tx_name, position=cell_pos[idx])
+            tx = Transmitter(tx_name, position=cell_pos[i])
             tx.look_at(look_at)
-            rx = Receiver(rx_name, position=cell_pos[idx])
+            rx = Receiver(rx_name, position=cell_pos[i])
             rx.look_at(look_at)
+            if self.get(tx_name) is not None:
+                self.remove(tx_name)
             self.add(tx)
+            if self.get(rx_name) is not None:
+                self.remove(rx_name)
             self.add(rx) 
         
         
@@ -1878,20 +1881,41 @@ class Scene:
         start = 0  
         crbs=[]
         while start < num:
-            if start + max_sample_each_turn > num:
+            if start + batch_size > num:
                 end = num
             else:
-                end = start + max_sample_each_turn
-            # update positions
-            for i in range(0,min(max_sample_each_turn,end-start)):
-                self.transmitters.values()[i].position = cell_pos[start+i]
-                self.receivers.values()[i].position = cell_pos[start+i]
+                end = start + batch_size
+            # update positions and look directions
+            
+            i = 0
+            for tx in self.transmitters.values():
+                if start+i >= end:
+                    if num > batch_size:
+                        for tx_id in range(start+i,start+batch_size):
+                            tx_name = f"tx-{tx_id-start-i}"
+                            rx_name = f"rx-{tx_id-start-i}"
+                            if self.get(tx_name) is not None:
+                                self.remove(tx_name)
+                            if self.get(rx_name) is not None:
+                                self.remove(rx_name)
+                    break
+                tx.position = cell_pos[start+i]
+                tx.look_at(look_at)
+                i = i + 1
+            i = 0
+            for rx in self.receivers.values():
+                if start+i >= end:
+                    break
+                rx.position = cell_pos[start+i]
+                rx.look_at(look_at)
+                i = i + 1
+            start = end
             crbs.append([])
-            path = self.compute_paths(max_depth=max_depth,num_samples=num_samples,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,scatter_keep_prob=scatter_keep_prob)
+            path = self.compute_paths(max_depth=max_depth,num_samples=num_samples,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,scat_keep_prob=scat_keep_prob)
             v=self.compute_target_velocities(path)
             path.apply_doppler(sampling_frequency=subcarrier_spacing,num_time_steps=num_time_steps,target_velocities=v)
             # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
-            crb = path.crb_delay()
+            crb = path.crb_delay(diag=singleBS)
             # [max_depth,num_targets,num_sources,max_num_paths]
             objects = path.objects
             # [max_num_wedges,2]
@@ -1925,7 +1949,7 @@ class Scene:
             objects_wedge1 = tf.tensor_scatter_nd_update(objects, indices, updates1)
             objects_wedge2 = tf.tensor_scatter_nd_update(objects, indices, updates2)
             for name in self.target_names:
-                id = obj_names[name]
+                idx = obj_names[name]
                 # mask which paths interact with the target and the paths
                 # [max_depth,num_targets,num_sources,max_num_paths]
                 obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj_or_wedge), True, False)
@@ -1946,6 +1970,15 @@ class Scene:
                 mask = tf.reshape(mask, [max_depth, num_rx,num_rx_ant, num_tx,num_tx_ant, max_num_paths, 1])
                 # [1,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
                 mask = tf.reduce_any(mask, axis=0, keepdims=True)
+                if singleBS:
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,num_tx]
+                    mask = tf.transpose(mask,perm=[0,2,4,5,6,1,3])
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx]
+                    mask = tf.linalg.diag_part(mask)
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
+                    mask = tf.expand_dims(mask, axis=-1)
+                    mask = tf.transpose(mask,perm=[0,5,1,6,2,3,4])
+                    
                 indices = tf.where(mask)
                 crb_target = tf.where(mask, crb, 1)
                 crb_target = tf.reduce_min(crb_target, axis=6)
@@ -1953,11 +1986,11 @@ class Scene:
                 crb_target = tf.reduce_min(crb_target, axis=4)
                 crb_target = tf.reduce_min(crb_target, axis=2)
                 crbs[-1].append(crb_target)
+            
+            del path
         
         return crbs
-                
-            
-            
+                   
     def _get_objects_name(self):
         """find the names of objects in the xml file,
         objects' names must be with the type 'mesh-name-XXX',XXX is the meterial or other string.

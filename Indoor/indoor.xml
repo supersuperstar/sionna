@@ -36,16 +36,19 @@
 <!-- Materials -->
 
 	<bsdf type="diffuse" id="mat-itu_ceiling_board" name="mat-itu_ceiling_board">
-		<rgb value="0.800000 0.800000 0.800000" name="reflectance"/>
+		<rgb value="0.8 0.8 0.8" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_plywood" name="mat-itu_plywood">
-		<rgb value="0.800000 0.400000 0.400000" name="reflectance"/>
+		<rgb value="0.6 0.3 0.3" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_floorboard" name="mat-itu_floorboard">
-		<rgb value="0.800000 0.800000 0.800000" name="reflectance"/>
+		<rgb value="0.8 0.8 0.8" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_concrete" name="mat-itu_concrete">
-		<rgb value="0.800000 0.800000 0.800000" name="reflectance"/>
+		<rgb value="0.8 0.8 0.8" name="reflectance"/>
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_metal" name="mat-itu_metal">
+		<rgb value="0.4 0.20000 0.300000" name="reflectance"/>
 	</bsdf>
 
 <!-- Emitters -->
@@ -59,65 +62,70 @@
 
 <!-- Shapes -->
 
-	<shape type="ply" id="mesh-ceiling-itu_ceiling_board" name="mesh-ceiling-itu_ceiling_board">
-		<string name="filename" value="meshes/ceiling-itu_ceiling_board.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_ceiling_board" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-door-itu_plywood" name="mesh-door-itu_plywood">
-		<string name="filename" value="meshes/door-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-floor-itu_floorboard" name="mesh-floor-itu_floorboard">
-		<string name="filename" value="meshes/floor-itu_floorboard.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_ceiling_board" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-table1-itu_plywood" name="mesh-table1-itu_plywood">
-		<string name="filename" value="meshes/table1-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-table2-itu_plywood" name="mesh-table2-itu_plywood">
-		<string name="filename" value="meshes/table2-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-table3-itu_plywood" name="mesh-table3-itu_plywood">
-		<string name="filename" value="meshes/table3-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-table4-itu_plywood" name="mesh-table4-itu_plywood">
-		<string name="filename" value="meshes/table4-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-table5-itu_plywood" name="mesh-table5-itu_plywood">
-		<string name="filename" value="meshes/table5-itu_plywood.ply"/>
-		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_plywood" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-wall1-itu_concrete" name="mesh-wall1-itu_concrete">
-		<string name="filename" value="meshes/wall1-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-ceiling" name="mesh-ceiling">
+		<string name="filename" value="meshes/ceiling.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-wall2-itu_concrete" name="mesh-wall2-itu_concrete">
-		<string name="filename" value="meshes/wall2-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-door" name="mesh-door">
+		<string name="filename" value="meshes/door.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-floor" name="mesh-floor">
+		<string name="filename" value="meshes/floor.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-wall3-itu_concrete" name="mesh-wall3-itu_concrete">
-		<string name="filename" value="meshes/wall3-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-table1" name="mesh-table1">
+		<string name="filename" value="meshes/table1.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-table2" name="mesh-table2">
+		<string name="filename" value="meshes/table2.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-table3" name="mesh-table3">
+		<string name="filename" value="meshes/table3.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-table4" name="mesh-table4">
+		<string name="filename" value="meshes/table4.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-table5" name="mesh-table5">
+		<string name="filename" value="meshes/table5.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-wall1" name="mesh-wall1">
+		<string name="filename" value="meshes/wall1.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-wall4-itu_concrete" name="mesh-wall4-itu_concrete">
-		<string name="filename" value="meshes/wall4-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-wall2" name="mesh-wall2">
+		<string name="filename" value="meshes/wall2.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-wall3" name="mesh-wall3">
+		<string name="filename" value="meshes/wall3.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-wall4" name="mesh-wall4">
+		<string name="filename" value="meshes/wall4.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-human" name="mesh-human">
+		<string name="filename" value="meshes/human.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_metal" name="bsdf"/>
 	</shape>
 
 <!-- Volumes -->
