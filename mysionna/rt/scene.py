@@ -1886,7 +1886,7 @@ class Scene:
             else:
                 end = start + batch_size
             # update positions and look directions
-            
+            print(f"Computing cells {start} to {end}")
             i = 0
             for tx in self.transmitters.values():
                 if start+i >= end:
@@ -1971,20 +1971,20 @@ class Scene:
                 # [1,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
                 mask = tf.reduce_any(mask, axis=0, keepdims=True)
                 if singleBS:
-                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,num_tx]
+                    # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,num_tx]
                     mask = tf.transpose(mask,perm=[0,2,4,5,6,1,3])
-                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx]
+                    # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx]
                     mask = tf.linalg.diag_part(mask)
-                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
+                    # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
                     mask = tf.expand_dims(mask, axis=-1)
                     mask = tf.transpose(mask,perm=[0,5,1,6,2,3,4])
                     
-                indices = tf.where(mask)
                 crb_target = tf.where(mask, crb, 1)
                 crb_target = tf.reduce_min(crb_target, axis=6)
                 crb_target = tf.reduce_min(crb_target, axis=5)
                 crb_target = tf.reduce_min(crb_target, axis=4)
                 crb_target = tf.reduce_min(crb_target, axis=2)
+                crb_target = tf.where(crb_target == 1, 0, crb_target)
                 crbs[-1].append(crb_target)
             
             del path

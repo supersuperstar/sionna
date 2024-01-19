@@ -743,19 +743,22 @@ class Paths:
         del alpha,alpha_1,alpha_2,alpha_ij,tau_i_mine_j,tau_i_mul_j,tau_i,tau_j,F_alpha,F_cos,F_sin,one
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths, max_num_paths]
         F = tf.transpose(F,perm=[0,1,2,3,4,7,5,6])
+        # F = tf.cast(F,tf.float64)
         F = tf.reshape(F, [-1,max_num_paths,max_num_paths]) * 1e-18
         crb = tf.linalg.diag_part(tf.linalg.pinv(F))
-        crb = tf.abs(crb) * 1e-18
-        
+        crb = tf.abs(crb)
+        # for the paths that are not valid, set the crb to 1
+        crb = tf.where(crb==0.0,1.0,crb)
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths]
         crb = tf.reshape(crb, [-1,num_rx,num_rx_ant,num_tx,num_tx_ant,num_time_steps,max_num_paths])
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
         crb = tf.transpose(crb,perm=[0,1,2,3,4,6,5])
-        # for the paths that are not valid, set the crb to 1
-        crb = tf.where(crb==0.0,1.0,crb)
+        
         return crb
         
     def export_crb(self,crb,filename:str,
+                   show_BS = False,
+                   BS_pos = None,
                    color_start = np.array([[60/255, 5/255, 80/255]]),
                    color_mid = np.array([[35/255, 138/255, 141/255]]),
                    color_end = np.array([[1, 1, 35./255]])):
@@ -764,6 +767,8 @@ class Paths:
         Args:
             crb (_type_): get from the method Paths.crb_delay
             filename (str): recommend to use .xyzrgb as the suffix
+            show_BS (bool, optional): whether to show the BS. Defaults to False.
+            BS_pos (_type_, optional): the position of the BS. Defaults to None.
             color_start (_type_, optional): colorbar. Defaults to np.array([[60/255, 5/255, 80/255]]).
             color_mid (_type_, optional): colorbar. Defaults to np.array([[35/255, 138/255, 141/255]]).
             color_end (_type_, optional): colorbar. Defaults to np.array([[1, 1, 35./255]]).
@@ -829,6 +834,12 @@ class Paths:
         color_end = np.repeat(color_end,c.shape[0],axis=0)
         
         c_color = np.where(c_color<0.5,color_start+(color_mid-color_start)*c_color*2,color_mid+(color_end-color_mid)*(c_color-0.5)*2)
+        
+        if show_BS and BS_pos is not None:
+            BS_pos = np.expand_dims(BS_pos, axis=0)
+            BS_pos = np.expand_dims(BS_pos, axis=0)
+            v = np.concatenate((v,BS_pos),axis=0)
+            c_color = np.concatenate((c_color,np.array([[1,0,0]])),axis=0)
         
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(v.numpy())

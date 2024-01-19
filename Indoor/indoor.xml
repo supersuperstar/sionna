@@ -125,7 +125,7 @@
 	<shape type="ply" id="mesh-human" name="mesh-human">
 		<string name="filename" value="meshes/human.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_metal" name="bsdf"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
 
 <!-- Volumes -->
