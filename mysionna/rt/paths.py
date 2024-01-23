@@ -823,7 +823,7 @@ class Paths:
         c = tf.gather_nd(c, indices)
         v = tf.gather_nd(v, indices)
         c = np.log10(c)
-        c = np.abs(c)
+        # c = np.abs(c)
         c = (c - np.min(c)) / (np.max(c) - np.min(c))
         
         c_color = np.expand_dims(c, axis=-1)

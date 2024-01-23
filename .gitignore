@@ -1,1 +1,4 @@
-net.py
+*.xyzrgb
+*.png
+**/__pycache__
+*.pyc
