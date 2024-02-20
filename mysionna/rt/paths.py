@@ -757,7 +757,6 @@ class Paths:
         return crb
         
     def export_crb(self,crb,filename:str,
-                   show_BS = False,
                    BS_pos = None,
                    color_start = np.array([[60/255, 5/255, 80/255]]),
                    color_mid = np.array([[35/255, 138/255, 141/255]]),
@@ -767,7 +766,6 @@ class Paths:
         Args:
             crb (_type_): get from the method Paths.crb_delay
             filename (str): recommend to use .xyzrgb as the suffix
-            show_BS (bool, optional): whether to show the BS. Defaults to False.
             BS_pos (_type_, optional): the position of the BS. Defaults to None.
             color_start (_type_, optional): colorbar. Defaults to np.array([[60/255, 5/255, 80/255]]).
             color_mid (_type_, optional): colorbar. Defaults to np.array([[35/255, 138/255, 141/255]]).
@@ -835,14 +833,17 @@ class Paths:
         
         c_color = np.where(c_color<0.5,color_start+(color_mid-color_start)*c_color*2,color_mid+(color_end-color_mid)*(c_color-0.5)*2)
         
-        if show_BS and BS_pos is not None:
-            BS_pos = np.expand_dims(BS_pos, axis=0)
+        pcd = o3d.geometry.PointCloud()
+        
+        if BS_pos is not None:
+            BS_pos = np.array(BS_pos)
             BS_pos = np.expand_dims(BS_pos, axis=0)
             v = np.concatenate((v,BS_pos),axis=0)
             c_color = np.concatenate((c_color,np.array([[1,0,0]])),axis=0)
+            pcd.points = o3d.utility.Vector3dVector(v)
+        else:
+            pcd.points = o3d.utility.Vector3dVector(v.numpy())
         
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(v.numpy())
         pcd.colors = o3d.utility.Vector3dVector(c_color)
         return o3d.io.write_point_cloud(filename, pcd)
         

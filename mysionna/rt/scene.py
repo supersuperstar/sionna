@@ -1837,6 +1837,49 @@ class Scene:
     def coverage_map_sensing(self,map_center, map_size_x, map_size_y, cell_size, look_at=[0,0,0],batch_size=100,singleBS=True,
                              max_depth=3,num_samples=100000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scat_keep_prob=0.001,
                              subcarrier_spacing=15e3,num_time_steps=14):
+        """_summary_
+
+        Args:
+            map_center ([float,float,float]): 
+                center of BS distribution map
+            map_size_x (float): 
+                size of base station distribution map in x direction
+            map_size_y (float): 
+                size of base station distribution map in y direction
+            cell_size (float): 
+                size of each cell in the map
+            look_at ([float,float,float]): 
+                look direction of each BS.Every BS look at the same direction. Defaults to [0,0,0].
+            batch_size (int, optional): 
+                how much BS to simulate in one turn. Defaults to 100.
+            singleBS (bool, optional): 
+                if set to True,then will compute the ray from and to the same BS and return the CRB of BS itself.
+                if set to False,then will compute the ray from and to different BS in the same batch and return the CRB between every pair of BSs in each batch.
+                Defaults to True.
+            max_depth (int, optional): 
+                _description_. Defaults to 3.
+            num_samples (int, optional): 
+                _description_. Defaults to 100000.
+            los (bool, optional): 
+                _description_. Defaults to True.
+            reflection (bool, optional): 
+                _description_. Defaults to True.
+            diffraction (bool, optional): 
+                _description_. Defaults to True.
+            scattering (bool, optional): 
+                _description_. Defaults to True.
+            edge_diffraction (bool, optional): 
+                _description_. Defaults to True.
+            scat_keep_prob (float, optional): 
+                _description_. Defaults to 0.001.
+            subcarrier_spacing (_type_, optional): 
+                _description_. Defaults to 15e3.
+            num_time_steps (int, optional): 
+                _description_. Defaults to 14.
+
+        Returns:
+            crb: [batch_size , target_num] list of Tensor [batch_size, batch_size]
+        """
         # compute cell positions
         cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
         cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
@@ -2075,7 +2118,9 @@ class Scene:
         v = tf.zeros([max_depth, num_rx*num_rx_ant, num_tx*num_tx_ant, max_num_paths, 3], dtype=tf.float32)
 
         for i,(name,velocity) in enumerate(zip(names,velocities)):
-            
+            if name not in obj_names:
+                print(f"Object {name} not found in the scene.It will be ignored.")
+                continue
             idx = obj_names[name]
             # mask which paths interact with the target and the paths
             # [max_depth,num_targets,num_sources,max_num_paths]
@@ -2134,6 +2179,9 @@ class Scene:
     
     @target_names.setter
     def target_names(self, value):
+        if value is None:
+            self._target_names = value
+            return
         if not isinstance(value, list):
             raise ValueError('target_names must be a list of string')
         for name in value:
@@ -2147,6 +2195,9 @@ class Scene:
     
     @target_velocities.setter
     def target_velocities(self, value):
+        if value is None:
+            self._target_velocities = value
+            return
         if not isinstance(value, list):
             raise ValueError('target_velocities must be a list of 3D vector')
         for v in value:
