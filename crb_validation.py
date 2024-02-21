@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sionna
 import tqdm
+import pandas as pd
 from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 # Import Sionna RT components
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
@@ -25,7 +26,7 @@ from mysionna.rt.scattering_pattern import *
 
 
 scenes = [["./Indoor/indoor.xml","./IndoorEnv/indoor-env.xml"]]
-scene_info = {"indoor.xml":{
+scene_info = {"indoor":{
     "tgname":["human"],
     "tgv":[(0,0,0)],
     "map_center":[0,0,2.95],
@@ -36,7 +37,7 @@ scene_info = {"indoor.xml":{
 }}
 
 subcarrier_spacing = 15e3
-subcarrier_num = 2048
+subcarrier_num = 4096
 num_time_steps = 1
 ebno_db = 30
 
@@ -67,7 +68,7 @@ def CSI(scene:Scene,scene_name,cell_pos,return_tau=False):
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps)
         a, tau = paths.cir()
         frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
-        h_freq = cir_to_ofdm_channel(frequencies, a, tau, normalize=True)
+        h_freq = cir_to_ofdm_channel(frequencies, a, tau, normalize=False)
         h.append(h_freq)
         # 记录真实tau
         if return_tau:
@@ -112,7 +113,7 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
     P_norm = tf.squeeze(P_norm)
     max_idx = tf.argmax(P_norm)
     tau_est = (start + int(max_idx) * step)
-    return tau_est
+    return tau_est*1e-9
 
 
 def getPos(scene_name):
@@ -185,6 +186,7 @@ def main():
         scene1 = scene_pair[0]
         scene2 = scene_pair[1]
         scene_name = scene1.split("/")[-1]
+        scene_name = scene_name.split(".")[0]
         
         # scene1
         tgname = scene_info.get(scene_name).get("tgname")
@@ -193,26 +195,48 @@ def main():
         cell_pos = getPos(scene_name)
         h_list1,tau_true = CSI(scene,scene_name,cell_pos,return_tau=True)
         
-        with open(f"{scene_name}_tau_true.txt","w") as f:
+        with open(f"./Data/{scene_name}/tau_true.txt","w") as f:
             for i in range(len(tau_true)):
                 f.write(f"{tau_true[i]}\n")
-    
+        
+        for i,h in enumerate(h_list1):
+            h_np = h.numpy()
+            np.save(f"./Data/{scene_name}/h1/{i}.npy",h_np)
+
         # scene2
         scene = setScene(scene2)
         scene.target_names = None
         scene.target_velocities = None
         cell_pos = getPos(scene_name)
         h_list2 = CSI(scene,scene_name,cell_pos)
-
+        
+        for i,h in enumerate(h_list2):
+            h_np = h.numpy()
+            np.save(f"./Data/{scene_name}/h2/{i}.npy",h_np)
+        
         print("music...")
-        for i,(h1,h2) in tqdm(enumerate(zip(h_list1,h_list2))):
+        tau_est = []
+        for (h1,h2) in tqdm.tqdm(zip(h_list1,h_list2)):
             h = h1-h2
-            tau_est = music(h,frequencies)
+            tau_est.append(music(h,frequencies,end=100,step=0.05))
         
         # write tau_est to file
-        with open(f"{scene_name}_tau_est.txt","w") as f:
-            f.write(f"{tau_est}\n")
+        with open(f"./Data/{scene_name}/tau_est.txt","w") as f:
+            for i in range(len(tau_est)):
+                f.write(f"{tau_est[i]}\n")
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    
+    with open("./Data/indoor/tau_true.txt","r") as f:
+        tau_true = f.readlines()
+        tau_true = np.array([float(i) for i in tau_true])
+    with open("./Data/indoor/tau_est.txt","r") as f:
+        tau_est = f.readlines()
+        tau_est = np.array([float(i) for i in tau_est])
+    
+    mse = np.abs(tau_true - tau_est)
+    mse = np.reshape(mse,(-1,21))
+    plt.imshow(mse)
+    plt.colorbar()
