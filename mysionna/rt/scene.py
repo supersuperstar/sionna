@@ -1963,6 +1963,7 @@ class Scene:
             start = end
             crbs.append([])
             path = self.compute_paths(max_depth=max_depth,num_samples=num_samples,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,scat_keep_prob=scat_keep_prob)
+            path.normalize_delays = False
             v=self.compute_target_velocities(path)
             path.apply_doppler(sampling_frequency=subcarrier_spacing,num_time_steps=num_time_steps,target_velocities=v)
             # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]

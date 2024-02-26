@@ -44,7 +44,7 @@
 	<bsdf type="diffuse" id="mat-itu_glass" name="mat-itu_glass">
 		<rgb value="0.16 0.8 0.634" name="reflectance"/>
 	</bsdf>
-
+	
 <!-- Emitters -->
 
 	<emitter type="directional" id="emit-light" name="emit-light">
@@ -110,6 +110,11 @@
 		<string name="filename" value="meshes/ceiling.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-human3" name="mesh-human3">
+		<string name="filename" value="meshes/human3.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-door" name="mesh-door">
 		<string name="filename" value="meshes/door.ply"/>

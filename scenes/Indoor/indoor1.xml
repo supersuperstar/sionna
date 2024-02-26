@@ -111,6 +111,11 @@
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
+	<shape type="ply" id="mesh-human1" name="mesh-human1">
+		<string name="filename" value="meshes/human1.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
 	<shape type="ply" id="mesh-door" name="mesh-door">
 		<string name="filename" value="meshes/door.ply"/>
 		<boolean name="face_normals" value="true"/>
