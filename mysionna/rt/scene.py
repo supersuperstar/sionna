@@ -1929,7 +1929,7 @@ class Scene:
             else:
                 end = start + batch_size
             # update positions and look directions
-            print(f"Computing cells {start} to {end}")
+            # print(f"Computing cells {start} to {end}")
             i = 0
             for tx in self.transmitters.values():
                 if start+i >= end:
@@ -2021,7 +2021,8 @@ class Scene:
                     # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
                     mask = tf.expand_dims(mask, axis=-1)
                     mask = tf.transpose(mask,perm=[0,5,1,6,2,3,4])
-                    
+                
+                # crb: [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
                 crb_target = tf.where(mask, crb, 1)
                 crb_target = tf.reduce_min(crb_target, axis=6)
                 crb_target = tf.reduce_min(crb_target, axis=5)
@@ -2036,7 +2037,7 @@ class Scene:
                    
     def _get_objects_name(self):
         """find the names of objects in the xml file,
-        objects' names must be with the type 'mesh-name-XXX',XXX is the meterial or other string.
+        objects' names must be with the type 'mesh-name'.
         for scattering and reflection ,this method return the name of object.
         and for diffraction ,this method return the name of two objects that make the wedge and concatenate them with '&'.
         Args:

@@ -12,8 +12,6 @@ if gpus:
         print(e)
 # Avoid warnings from TensorFlow
 tf.get_logger().setLevel('ERROR')
-
-tf.random.set_seed(1) # Set global random seed for reproducibility
 import matplotlib.pyplot as plt
 import numpy as np
 import sionna
@@ -24,27 +22,52 @@ from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
 from mysionna.rt.scattering_pattern import *
 
-
-scenes = [["./Indoor/indoor.xml","./IndoorEnv/indoor-env.xml"]]
-scene_info = {"indoor":{
-    "tgname":["human"],
-    "tgv":[(0,0,0)],
+scene_info = [
+#     {
+#     # num_samples1000000
+#     "scene_name":"indoor",
+#     "paths":["./Indoor/indoor.xml","./IndoorEnv/indoor-env.xml"],
+#     "tgname":["human"],
+#     "tgv":[(1,1,0.0)],
+#     "map_center":[0,0,2.95],
+#     "map_size_x":6,
+#     "map_size_y":10,
+#     "cell_size":0.5,
+#     "look_at":[1.9,3.2,1.0],
+# },
+    {
+    "scene_name":"indoor",
+    "paths":["./IndoorEnv/indoor-env.xml","./IndoorEnv/indoor-env.xml"],
+    "tgname":["table1"],
+    "tgv":[(1,1,0.0)],
     "map_center":[0,0,2.95],
     "map_size_x":6,
     "map_size_y":10,
     "cell_size":0.5,
-    "look_at":[1.9,2.7,1.0],
-}}
+    "look_at":[0,0,0]
+},
+    {
+    "scene_name":"indoor",
+    "paths":["./IndoorEnv/indoor-env.xml","./IndoorEnv/indoor-env.xml"],
+    "tgname":["door"],
+    "tgv":[(1,1,0.0)],
+    "map_center":[0,0,2.95],
+    "map_size_x":6,
+    "map_size_y":10,
+    "cell_size":0.5,
+    "look_at":[2.2,4.0,1.0]
+},]
 
 subcarrier_spacing = 15e3
-subcarrier_num = 4096
+subcarrier_num = 2048
 num_time_steps = 1
 ebno_db = 30
+num_samples = 100000
+tf.random.set_seed(1) # Set global random seed for reproducibility
 
-
-def CSI(scene:Scene,scene_name,cell_pos,return_tau=False):
+def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=10000,los=True,scattering=True,diffraction=True,edge_diffraction=True,reflection=True):
     print("computing csi...")
-    look_at = scene_info.get(scene_name).get("look_at")
+    look_at = info.get("look_at")
     h = []
     tau_true = []
     for pos in tqdm.tqdm(cell_pos):
@@ -52,7 +75,7 @@ def CSI(scene:Scene,scene_name,cell_pos,return_tau=False):
         tx = Transmitter(name='tx',position=pos)
         rx = Receiver(name='rx',position=pos)
         tx.look_at(look_at)
-        tx.look_at(look_at)
+        rx.look_at(look_at)
         if scene.get("tx") is not None:
             scene.remove("tx")
         scene.add(tx)
@@ -60,7 +83,8 @@ def CSI(scene:Scene,scene_name,cell_pos,return_tau=False):
             scene.remove("rx")
         scene.add(rx)
         # Compute the channel impulse response
-        paths = scene.compute_paths(max_depth=3,diffraction=True,scattering=True,edge_diffraction=True,num_samples=1000000)
+        paths = scene.compute_paths(max_depth=3,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,num_samples=num_samples)
+        paths.normalize_delays = False
         if return_tau:
             v,obj_name = scene.compute_target_velocities(paths, return_obj_names=True)
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps,target_velocities=v)
@@ -73,7 +97,7 @@ def CSI(scene:Scene,scene_name,cell_pos,return_tau=False):
         # 记录真实tau
         if return_tau:
             tau_true.append(999999.0)
-            tgname = scene_info.get(scene_name).get("tgname")
+            tgname = info.get("tgname")
             for name in tgname:
                 mask = tf.equal(obj_name, name)
                 mask = tf.reduce_any(mask, axis=0)
@@ -116,11 +140,12 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
     return tau_est*1e-9
 
 
-def getPos(scene_name):
-    map_center = scene_info.get(scene_name).get("map_center")
-    map_size_x = scene_info.get(scene_name).get("map_size_x")
-    map_size_y = scene_info.get(scene_name).get("map_size_y")
-    cell_size = scene_info.get(scene_name).get("cell_size")
+def getPos(info):
+    map_center = info.get("map_center")
+    map_size_x = info.get("map_size_x")
+    map_size_y = info.get("map_size_y")
+    cell_size = info.get("cell_size")
+    
     # compute cell positions
     cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
     cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
@@ -182,37 +207,81 @@ def setScene(filename,tgname=None,tgv=None):
 
 def main():
     frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
-    for scene_pair in scenes:
-        scene1 = scene_pair[0]
-        scene2 = scene_pair[1]
-        scene_name = scene1.split("/")[-1]
-        scene_name = scene_name.split(".")[0]
-        
+    for info in scene_info:
+        scene_name = info.get("scene_name")
+        scene1 = info.get("paths")[0]
+        scene2 = info.get("paths")[1]
+        map_center = info.get("map_center")
+        x = info.get("map_size_x")
+        y = info.get("map_size_y")
+        cell_size = info.get("cell_size")
+        look_at = info.get("look_at")
         # scene1
-        tgname = scene_info.get(scene_name).get("tgname")
-        tgv = scene_info.get(scene_name).get("tgv")
+        tgname = info.get("tgname")
+        tgv = info.get("tgv")
         scene = setScene(scene1,tgname,tgv)
-        cell_pos = getPos(scene_name)
-        h_list1,tau_true = CSI(scene,scene_name,cell_pos,return_tau=True)
+        cell_pos = getPos(info)
+        h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True,num_samples=num_samples)
+        if scene.get("tx") is not None:
+            scene.remove("tx")
+        if scene.get("rx") is not None:
+            scene.remove("rx")
         
-        with open(f"./Data/{scene_name}/tau_true.txt","w") as f:
+        # create folder
+        if not os.path.exists(f"./Data/{scene_name}"):
+            os.makedirs(f"./Data/{scene_name}")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/h1"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/h1")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/h2"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/h2")
+        
+        with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_true.txt","w") as f:
             for i in range(len(tau_true)):
                 f.write(f"{tau_true[i]}\n")
         
         for i,h in enumerate(h_list1):
             h_np = h.numpy()
-            np.save(f"./Data/{scene_name}/h1/{i}.npy",h_np)
+            np.save(f"./Data/{scene_name}/{tgname[0]}/h1/{num_samples}_{x}_{y}_{cell_size}_{i}.npy",h_np)
 
+        print("computing crb...")
+        crbs = scene.coverage_map_sensing(map_center=map_center,
+                                  map_size_x=x,
+                                  map_size_y=y,
+                                  cell_size=cell_size,
+                                  look_at=look_at,
+                                  batch_size=1,
+                                  singleBS=True,
+                                  num_samples=num_samples,
+                                  max_depth=3,
+                                  diffraction=True,
+                                  edge_diffraction=True,
+                                  num_time_steps=1)
+        
+        crb = None
+        for i in range(0,len(crbs)):
+            c = crbs[i][0]
+            c = tf.squeeze(c)
+            # c = tf.linalg.diag_part(c)
+            c = c.numpy()
+            if crb is None:
+                crb = c
+            else:
+                crb = np.concatenate((crb,c),axis=None)
+        crb = np.array(crb)
+        np.save(f"./Data/{scene_name}/{tgname[0]}/crb.npy",crb)
+        
         # scene2
         scene = setScene(scene2)
         scene.target_names = None
         scene.target_velocities = None
-        cell_pos = getPos(scene_name)
-        h_list2 = CSI(scene,scene_name,cell_pos)
+        cell_pos = getPos(info)
+        h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
         
         for i,h in enumerate(h_list2):
             h_np = h.numpy()
-            np.save(f"./Data/{scene_name}/h2/{i}.npy",h_np)
+            np.save(f"./Data/{scene_name}/{tgname[0]}/h2/{num_samples}_{x}_{y}_{cell_size}_{i}.npy",h_np)
         
         print("music...")
         tau_est = []
@@ -221,22 +290,22 @@ def main():
             tau_est.append(music(h,frequencies,end=100,step=0.05))
         
         # write tau_est to file
-        with open(f"./Data/{scene_name}/tau_est.txt","w") as f:
+        with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_est.txt","w") as f:
             for i in range(len(tau_est)):
                 f.write(f"{tau_est[i]}\n")
 
 
 if __name__ == "__main__":
-    # main()
+    main()
     
-    with open("./Data/indoor/tau_true.txt","r") as f:
-        tau_true = f.readlines()
-        tau_true = np.array([float(i) for i in tau_true])
-    with open("./Data/indoor/tau_est.txt","r") as f:
-        tau_est = f.readlines()
-        tau_est = np.array([float(i) for i in tau_est])
+    # with open("./Data/indoor/tau_true.txt","r") as f:
+    #     tau_true = f.readlines()
+    #     tau_true = np.array([float(i) for i in tau_true])
+    # with open("./Data/indoor/tau_est.txt","r") as f:
+    #     tau_est = f.readlines()
+    #     tau_est = np.array([float(i) for i in tau_est])
     
-    mse = np.abs(tau_true - tau_est)
-    mse = np.reshape(mse,(-1,21))
-    plt.imshow(mse)
-    plt.colorbar()
+    # mse = np.abs(tau_true - tau_est)
+    # mse = np.reshape(mse,(-1,21))
+    # plt.imshow(mse)
+    # plt.colorbar()
