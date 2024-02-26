@@ -23,40 +23,44 @@ from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
 from mysionna.rt.scattering_pattern import *
 
 scene_info = [
-#     {
-#     # num_samples1000000
-#     "scene_name":"indoor",
-#     "paths":["./Indoor/indoor.xml","./IndoorEnv/indoor-env.xml"],
-#     "tgname":["human"],
-#     "tgv":[(1,1,0.0)],
-#     "map_center":[0,0,2.95],
-#     "map_size_x":6,
-#     "map_size_y":10,
-#     "cell_size":0.5,
-#     "look_at":[1.9,3.2,1.0],
-# },
     {
-    "scene_name":"indoor",
-    "paths":["./IndoorEnv/indoor-env.xml","./IndoorEnv/indoor-env.xml"],
-    "tgname":["table1"],
-    "tgv":[(1,1,0.0)],
-    "map_center":[0,0,2.95],
-    "map_size_x":6,
-    "map_size_y":10,
-    "cell_size":0.5,
-    "look_at":[0,0,0]
-},
+        # num_samples1000000
+        "scene_name":"indoor",
+        "paths":["./scenes/Indoor/indoor.xml","./scenes/IndoorEnv/indoor-env.xml"],
+        "tgname":["human"],
+        "tgv":[(1,1,0.0)],
+        "map_center":[0,0,2.95],
+        "map_size_x":6,
+        "map_size_y":10,
+        "cell_size":0.5,
+        "look_at":[1.9,3.2,1.0],
+    },
     {
-    "scene_name":"indoor",
-    "paths":["./IndoorEnv/indoor-env.xml","./IndoorEnv/indoor-env.xml"],
-    "tgname":["door"],
-    "tgv":[(1,1,0.0)],
-    "map_center":[0,0,2.95],
-    "map_size_x":6,
-    "map_size_y":10,
-    "cell_size":0.5,
-    "look_at":[2.2,4.0,1.0]
-},]
+        "scene_name":"indoor",
+        "paths":["./scenes/IndoorEnv/indoor-env.xml","./scenes/IndoorEnv/indoor-env.xml"],
+        "tgname":["table1"],
+        "tgv":[(1,1,0.0)],
+        "map_center":[0,0,2.95],
+        "map_size_x":6,
+        "map_size_y":10,
+        "cell_size":0.5,
+        "look_at":[0,0,0]
+    },
+    {
+        "scene_name":"indoor",
+        "paths":["./scenes/IndoorEnv/indoor-env.xml","./scenes/IndoorEnv/indoor-env.xml"],
+        "tgname":["door"],
+        "tgv":[(1,1,0.0)],
+        "map_center":[0,0,2.95],
+        "map_size_x":6,
+        "map_size_y":10,
+        "cell_size":0.5,
+        "look_at":[2.2,4.0,1.0]
+    },
+    {
+        "scene_name":"indoor",
+    }
+]
 
 subcarrier_spacing = 15e3
 subcarrier_num = 2048
@@ -204,7 +208,7 @@ def setScene(filename,tgname=None,tgv=None):
     
     return scene
         
-
+        
 def main():
     frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
     for info in scene_info:
@@ -216,26 +220,34 @@ def main():
         y = info.get("map_size_y")
         cell_size = info.get("cell_size")
         look_at = info.get("look_at")
-        # scene1
         tgname = info.get("tgname")
         tgv = info.get("tgv")
+
+        # create folder
+        if not os.path.exists(f"./Data"):
+            os.makedirs(f"./Data")
+        if not os.path.exists(f"./Data/{scene_name}"):
+            os.makedirs(f"./Data/{scene_name}")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2")
+        
+        # scene1
         scene = setScene(scene1,tgname,tgv)
-        cell_pos = getPos(info)
+        if info.get("pos") is not None:
+            cell_pos = info.get("pos")
+        else:
+            cell_pos = getPos(info)
         h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True,num_samples=num_samples)
         if scene.get("tx") is not None:
             scene.remove("tx")
         if scene.get("rx") is not None:
             scene.remove("rx")
         
-        # create folder
-        if not os.path.exists(f"./Data/{scene_name}"):
-            os.makedirs(f"./Data/{scene_name}")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/h1"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/h1")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/h2"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/h2")
+        
         
         with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_true.txt","w") as f:
             for i in range(len(tau_true)):
@@ -243,13 +255,10 @@ def main():
         
         for i,h in enumerate(h_list1):
             h_np = h.numpy()
-            np.save(f"./Data/{scene_name}/{tgname[0]}/h1/{num_samples}_{x}_{y}_{cell_size}_{i}.npy",h_np)
+            np.save(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1/{i}.npy",h_np)
 
         print("computing crb...")
-        crbs = scene.coverage_map_sensing(map_center=map_center,
-                                  map_size_x=x,
-                                  map_size_y=y,
-                                  cell_size=cell_size,
+        crbs = scene.coverage_map_sensing(cell_pos=cell_pos,
                                   look_at=look_at,
                                   batch_size=1,
                                   singleBS=True,
@@ -276,12 +285,15 @@ def main():
         scene = setScene(scene2)
         scene.target_names = None
         scene.target_velocities = None
-        cell_pos = getPos(info)
+        if info.get("pos") is not None:
+            cell_pos = info.get("pos")
+        else:
+            cell_pos = getPos(info)
         h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
         
         for i,h in enumerate(h_list2):
             h_np = h.numpy()
-            np.save(f"./Data/{scene_name}/{tgname[0]}/h2/{num_samples}_{x}_{y}_{cell_size}_{i}.npy",h_np)
+            np.save(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2/{i}.npy",h_np)
         
         print("music...")
         tau_est = []

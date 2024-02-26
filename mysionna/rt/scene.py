@@ -17,6 +17,7 @@ import mitsuba as mi
 import tensorflow as tf
 import numpy as np
 
+from tqdm import tqdm
 from .antenna_array import AntennaArray
 from .camera import Camera
 from sionna.constants import SPEED_OF_LIGHT
@@ -1834,7 +1835,7 @@ class Scene:
 
         return paths_obj_names
     
-    def coverage_map_sensing(self,map_center, map_size_x, map_size_y, cell_size, look_at=[0,0,0],batch_size=100,singleBS=True,
+    def coverage_map_sensing(self,map_center=[0,0,0], map_size_x=10, map_size_y=10, cell_size=1,cell_pos=None, look_at=[0,0,0],batch_size=100,singleBS=True,
                              max_depth=3,num_samples=100000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scat_keep_prob=0.001,
                              subcarrier_spacing=15e3,num_time_steps=14):
         """_summary_
@@ -1848,6 +1849,8 @@ class Scene:
                 size of base station distribution map in y direction
             cell_size (float): 
                 size of each cell in the map
+            cell_pos (list[float,float,float], optional):
+                if set to None, then will compute the cell positions based on map_center, map_size_x, map_size_y and cell_size.Otherwise, will use the given cell_pos. Defaults to None.
             look_at ([float,float,float]): 
                 look direction of each BS.Every BS look at the same direction. Defaults to [0,0,0].
             batch_size (int, optional): 
@@ -1881,22 +1884,26 @@ class Scene:
             crb: [batch_size , target_num] list of Tensor [batch_size, batch_size]
         """
         # compute cell positions
-        cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
-        cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
-        cell_positions = np.zeros((cell_num_x, cell_num_y, 3))
-        # fill x
-        x_fill = np.arange(0,cell_num_x) * cell_size + map_center[0] - map_size_x/2
-        x_fill = np.tile(x_fill,cell_num_y)
-        cell_positions[:,:,0] = x_fill.reshape([cell_num_y,cell_num_x]).transpose()
-        # fill y
-        y_fill = np.arange(0,cell_num_y) * cell_size + map_center[1] - map_size_y/2
-        y_fill = np.tile(y_fill,cell_num_x)
-        cell_positions[:,:,1] = y_fill.reshape([cell_num_x,cell_num_y])
-        # fill z
-        cell_positions[:,:,2] = np.tile(map_center[2],(cell_num_x,cell_num_y))
-        cell_pos = tf.constant(cell_positions, dtype=tf.float32)
-        # [num_cells_x*num_cells_y, 3]
-        cell_pos = tf.reshape(cell_pos, [-1, 3])  
+        if cell_pos is None:
+            cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
+            cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
+            cell_positions = np.zeros((cell_num_x, cell_num_y, 3))
+            # fill x
+            x_fill = np.arange(0,cell_num_x) * cell_size + map_center[0] - map_size_x/2
+            x_fill = np.tile(x_fill,cell_num_y)
+            cell_positions[:,:,0] = x_fill.reshape([cell_num_y,cell_num_x]).transpose()
+            # fill y
+            y_fill = np.arange(0,cell_num_y) * cell_size + map_center[1] - map_size_y/2
+            y_fill = np.tile(y_fill,cell_num_x)
+            cell_positions[:,:,1] = y_fill.reshape([cell_num_x,cell_num_y])
+            # fill z
+            cell_positions[:,:,2] = np.tile(map_center[2],(cell_num_x,cell_num_y))
+            cell_pos = tf.constant(cell_positions, dtype=tf.float32)
+            # [num_cells_x*num_cells_y, 3]
+            cell_pos = tf.reshape(cell_pos, [-1, 3])  
+        else:
+            cell_pos = tf.constant(cell_pos, dtype=tf.float32)
+            cell_pos = tf.reshape(cell_pos, [-1, 3])
         
         num = cell_pos.shape[0]
         # add tx/rx
@@ -1923,6 +1930,7 @@ class Scene:
         
         start = 0  
         crbs=[]
+        pbar = tqdm(total=num)
         while start < num:
             if start + batch_size > num:
                 end = num
@@ -2030,6 +2038,7 @@ class Scene:
                 crb_target = tf.reduce_min(crb_target, axis=2)
                 crb_target = tf.where(crb_target == 1, 0, crb_target)
                 crbs[-1].append(crb_target)
+            pbar.update(i)
             
             del path
         

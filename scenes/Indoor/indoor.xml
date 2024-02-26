@@ -19,10 +19,10 @@
 		<float name="near_clip" value="0.100000"/>
 		<float name="far_clip" value="1000.000000"/>
 		<transform name="to_world">
-			<rotate x="1" angle="109.56216972139326"/>
-			<rotate y="1" angle="0.7892899903800622"/>
-			<rotate z="1" angle="148.2391609155335"/>
-			<translate value="-2.357080 -4.602375 3.114122"/>
+			<rotate x="1" angle="109.56217655158244"/>
+			<rotate y="1" angle="0.7892924449792952"/>
+			<rotate z="1" angle="-121.76083976771184"/>
+			<translate value="4.602375 -2.357080 3.114122"/>
 		</transform>
 		<sampler type="independent" name="sampler">
 			<integer name="sample_count" value="$spp"/>
@@ -36,13 +36,13 @@
 <!-- Materials -->
 
 	<bsdf type="diffuse" id="mat-itu_plywood" name="mat-itu_plywood">
-		<rgb value="0.6 0.3 0.3" name="reflectance"/>
+		<rgb value="0.3 0.1 0.1" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_concrete" name="mat-itu_concrete">
 		<rgb value="0.8 0.8 0.8" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_glass" name="mat-itu_glass">
-		<rgb value="0.6 0.6 0.6" name="reflectance"/>
+		<rgb value="0.16 0.8 0.634" name="reflectance"/>
 	</bsdf>
 
 <!-- Emitters -->
@@ -50,7 +50,7 @@
 	<emitter type="directional" id="emit-light" name="emit-light">
 		<rgb value="1.000000 1.000000 1.000000" name="irradiance"/>
 		<transform name="to_world">
-			<matrix value="0.567473 -0.736800 0.367559 -5.957753 -0.823392 -0.507795 0.253318 -0.304171 0.000000 -0.446396 -0.894836 6.879978 0.000000 0.000000 0.000000 1.000000"/>
+			<matrix value="0.823392 0.507795 -0.253318 0.304171 0.567473 -0.736800 0.367559 -5.957753 0.000000 -0.446396 -0.894836 6.879978 0.000000 0.000000 0.000000 1.000000"/>
 		</transform>
 	</emitter>
 
@@ -111,13 +111,23 @@
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-door" name="mesh-door">
-		<string name="filename" value="meshes/door.ply"/>
+	<shape type="ply" id="mesh-human2" name="mesh-human2">
+		<string name="filename" value="meshes/human2.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-human" name="mesh-human">
-		<string name="filename" value="meshes/human.ply"/>
+	<shape type="ply" id="mesh-human1" name="mesh-human1">
+		<string name="filename" value="meshes/human1.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-human3" name="mesh-human3">
+		<string name="filename" value="meshes/human3.ply"/>
+		<boolean name="face_normals" value="true"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-door" name="mesh-door">
+		<string name="filename" value="meshes/door.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_plywood" name="bsdf"/>
 	</shape>

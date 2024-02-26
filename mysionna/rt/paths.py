@@ -9,7 +9,12 @@ Dataclass that stores paths
 import tensorflow as tf
 import os
 import numpy as np
-import open3d as o3d
+# check if open3d is installed
+try:
+    import open3d as o3d
+    open3d_installed = True
+except:
+    open3d_installed = False
 
 from . import scene as scene_module
 from sionna.utils.tensors import expand_to_rank, insert_dims
@@ -831,21 +836,30 @@ class Paths:
         color_mid = np.repeat(color_mid,c.shape[0],axis=0)
         color_end = np.repeat(color_end,c.shape[0],axis=0)
         
-        c_color = np.where(c_color<0.5,color_start+(color_mid-color_start)*c_color*2,color_mid+(color_end-color_mid)*(c_color-0.5)*2)
-        
-        pcd = o3d.geometry.PointCloud()
-        
+        c_color = np.where(c_color<0.5,color_start+(color_mid-color_start)*c_color*2,color_mid+(color_end-color_mid)*(c_color-0.5)*2)    
+            
         if BS_pos is not None:
             BS_pos = np.array(BS_pos)
             BS_pos = np.expand_dims(BS_pos, axis=0)
             v = np.concatenate((v,BS_pos),axis=0)
             c_color = np.concatenate((c_color,np.array([[1,0,0]])),axis=0)
-            pcd.points = o3d.utility.Vector3dVector(v)
         else:
-            pcd.points = o3d.utility.Vector3dVector(v.numpy())
+            v = v.numpy()
         
-        pcd.colors = o3d.utility.Vector3dVector(c_color)
-        return o3d.io.write_point_cloud(filename, pcd)
+        if open3d_installed:
+            print("open3d is installed, save the file as .xyzrgb")
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(v)
+            pcd.colors = o3d.utility.Vector3dVector(c_color)
+            return o3d.io.write_point_cloud(filename, pcd)
+        else:
+            print("open3d is not installed, save the file as .npy")
+            try:
+                np.save(f"{filename}-positions.npy",v)
+                np.save(f"{filename}-colors.npy",c_color)
+                return True
+            except:
+                return False
         
         
     #######################################################
