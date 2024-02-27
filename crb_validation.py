@@ -142,12 +142,7 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
     return tau_est*1e-9
 
 
-def getPos(info):
-    map_center = info.get("map_center")
-    map_size_x = info.get("map_size_x")
-    map_size_y = info.get("map_size_y")
-    cell_size = info.get("cell_size")
-    
+def getPos(map_center, map_size_x, map_size_y, cell_size):   
     # compute cell positions
     cell_num_x = int(map_size_x/cell_size) + 1 # Number of x cells in the map
     cell_num_y = int(map_size_y/cell_size) + 1 # Number of y cells in the map
@@ -222,6 +217,8 @@ def main():
         tgname = info.get("tgname")
         tgv = info.get("tgv")
 
+        print(f"scene: {scene_name}, tgname: {tgname[0]}")
+        
         # create folder
         if not os.path.exists(f"./Data"):
             os.makedirs(f"./Data")
@@ -246,7 +243,7 @@ def main():
             if info.get("pos") is not None:
                 cell_pos = info.get("pos")
             else:
-                cell_pos = getPos(info)
+                cell_pos = getPos(map_center,x,y,cell_size)
             h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True,num_samples=num_samples)
             
             # save data
@@ -304,7 +301,7 @@ def main():
             if info.get("pos") is not None:
                 cell_pos = info.get("pos")
             else:
-                cell_pos = getPos(info)
+                cell_pos = getPos(map_center,x,y,cell_size)
             h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
             
             for i,h in enumerate(h_list2):
