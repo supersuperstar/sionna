@@ -65,6 +65,7 @@ num_time_steps = 1
 ebno_db = 30
 num_samples = 100000
 max_depth = 1
+step = 0.01
 tf.random.set_seed(1) # Set global random seed for reproducibility
 
 def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=10000,los=True,scattering=True,diffraction=True,edge_diffraction=True,reflection=True):
@@ -208,7 +209,7 @@ def main():
     for info in scene_info:
         scene_name = info.get("scene_name")
         scene1 = info.get("paths")[0]
-        scene2 = info.get("paths")[1]
+        scene_env = info.get("paths")[1]
         map_center = info.get("map_center")
         x = info.get("map_size_x")
         y = info.get("map_size_y")
@@ -228,16 +229,41 @@ def main():
             os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
         if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1"):
             os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2")
+        if not os.path.exists(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2"):
+            os.makedirs(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2")
         
+        # 计算环境杂波信道
+        if os.path.exists(f"./Data/{scene_name}/saved.txt"):
+            h_list2 = []
+            # 遍历文件夹，读取所有npy文件
+            for root, dirs, files in os.walk(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2"):
+                for file in files:
+                    h = np.load(os.path.join(root, file))
+                    h = tf.constant(h, dtype=tf.complex64)
+                    h_list2.append(h)
+        else:
+            scene = setScene(scene_env)
+            if info.get("pos") is not None:
+                cell_pos = info.get("pos")
+            else:
+                cell_pos = getPos(map_center,x,y,cell_size)
+            h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
+            
+            for i,h in enumerate(h_list2):
+                h_np = h.numpy()
+                np.save(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2/{i}.npy",h_np)
+            print("saved environment info")
+            with open(f"./Data/{scene_name}/saved.txt","w") as f:
+                f.write(f"{1}")
+        
+        # 读取仿真进度
         if os.path.exists(f"./Data/{scene_name}/{tgname[0]}/saved.txt"):
             with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","r") as f:
                 saved = int(f.read())
         else:
             saved = 0
         
-        # scene1
+        # 计算含目标的CSI
         if saved == 0:
             scene = setScene(scene1,tgname,tgv)
             if info.get("pos") is not None:
@@ -258,8 +284,21 @@ def main():
             saved += 1
             with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
                 f.write(f"{saved}")
-        
-        # crb
+        else:
+            h_list1 = []
+            # 遍历文件夹，读取所有npy文件
+            for root, dirs, files in os.walk(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1"):
+                for file in files:
+                    h = np.load(os.path.join(root, file))
+                    h = tf.constant(h, dtype=tf.complex64)
+                    h_list1.append(h)
+            # 读取tau_true
+            tau_true = []
+            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_true.txt","r") as f:
+                tau_true = f.readlines()
+                tau_true = np.array([float(i) for i in tau_true])
+            
+        # 计算crb
         if saved == 1:
             print("computing crb...")
             if scene.get("tx") is not None:
@@ -292,42 +331,33 @@ def main():
             saved += 1
             with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
                 f.write(f"{saved}")
+        else:
+            crb = np.load(f"./Data/{scene_name}/{tgname[0]}/crb.npy")
         
-        # scene2
+        # 计算music估计值
         if saved == 2:
-            scene = setScene(scene2)
-            scene.target_names = None
-            scene.target_velocities = None
-            if info.get("pos") is not None:
-                cell_pos = info.get("pos")
-            else:
-                cell_pos = getPos(map_center,x,y,cell_size)
-            h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
-            
-            for i,h in enumerate(h_list2):
-                h_np = h.numpy()
-                np.save(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h2/{i}.npy",h_np)
-            print("saved")
-            saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
-                f.write(f"{saved}")
-        
-        # music
-        if saved == 3:
             print("music...")
             tau_est = []
-            for (h1,h2) in tqdm.tqdm(zip(h_list1,h_list2)):
+            h = zip(tau_true,h_list1,h_list2)
+            for (tau,h1,h2) in tqdm.tqdm(h):
                 h = h1-h2
-                tau_est.append(music(h,frequencies,end=100,step=0.05))
+                tau = tau*1e9
+                start = tau-step*500
+                end = tau+step*500
+                tau_est.append(music(h,frequencies,start=start,end=end,step=step))
             
-            # write tau_est to file
+            # write tau_est and mse to file
             with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_est.txt","w") as f:
                 for i in range(len(tau_est)):
                     f.write(f"{tau_est[i]}\n")
+            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_mse.txt","w") as f:
+                for i in range(len(tau_est)):
+                    f.write(f"{np.abs(tau_true[i]-tau_est[i])}\n")
             print("saved")
             saved += 1
             with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
                 f.write(f"{saved}")
+        
 
 
 if __name__ == "__main__":
