@@ -30,8 +30,8 @@ scene_info = [
         "tgname":["human1"],
         "tgv":[(0,-0.8,0)],
         "map_center":[0,0,2.95],
-        "map_size_x":6,
-        "map_size_y":10,
+        "map_size_x":10,
+        "map_size_y":6,
         "cell_size":0.5,
         "look_at":[-3.37234,2.18367,1.20838],
     },
@@ -41,8 +41,8 @@ scene_info = [
         "tgname":["human2"],
         "tgv":[(0.8,0,0)],
         "map_center":[0,0,2.95],
-        "map_size_x":6,
-        "map_size_y":10,
+        "map_size_x":10,
+        "map_size_y":6,
         "cell_size":0.5,
         "look_at":[-2.81027,-1.92977,1.20838]
     },
@@ -52,8 +52,8 @@ scene_info = [
         "tgname":["human3"],
         "tgv":[(0,0,0)],
         "map_center":[0,0,2.95],
-        "map_size_x":6,
-        "map_size_y":10,
+        "map_size_x":10,
+        "map_size_y":6,
         "cell_size":0.5,
         "look_at":[2.97116,-0.235489,1.20838]
     }
@@ -63,13 +63,13 @@ subcarrier_spacing = 15e3
 subcarrier_num = 2048
 num_time_steps = 1
 ebno_db = 30
-num_samples = 100000
+num_samples = 1000000
+batch_size = 10 # crb batch size
 max_depth = 1
-step = 0.01
+step = 0.1
 tf.random.set_seed(1) # Set global random seed for reproducibility
 
-def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=10000,los=True,scattering=True,diffraction=True,edge_diffraction=True,reflection=True):
-    print("computing csi...")
+def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=num_samples,los=True,scattering=True,diffraction=True,edge_diffraction=True,reflection=True):
     look_at = info.get("look_at")
     h = []
     tau_true = []
@@ -91,7 +91,7 @@ def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=10000,los=True,sc
         if return_tau:
             v,obj_name = scene.compute_target_velocities(paths, return_obj_names=True)
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps,target_velocities=v)
-        else:
+        else: 
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps)
         a, tau = paths.cir()
         frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
@@ -217,7 +217,7 @@ def main():
         look_at = info.get("look_at")
         tgname = info.get("tgname")
         tgv = info.get("tgv")
-
+        title = f"{num_samples}-{max_depth}-{step}-{batch_size}-{x}-{y}-{cell_size}"
         print(f"scene: {scene_name}, tgname: {tgname[0]}")
         
         # create folder
@@ -227,21 +227,22 @@ def main():
             os.makedirs(f"./Data/{scene_name}")
         if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}"):
             os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1")
-        if not os.path.exists(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2"):
-            os.makedirs(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2")
+        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{title}_h1"):
+            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{title}_h1")
+        if not os.path.exists(f"./Data/{scene_name}/{title}_env"):
+            os.makedirs(f"./Data/{scene_name}/{title}_env")
         
         # 计算环境杂波信道
-        if os.path.exists(f"./Data/{scene_name}/saved.txt"):
+        if os.path.exists(f"./Data/{scene_name}/{title}_saved.txt"):
             h_list2 = []
             # 遍历文件夹，读取所有npy文件
-            for root, dirs, files in os.walk(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2"):
+            for root, dirs, files in os.walk(f"./Data/{scene_name}/{title}_env"):
                 for file in files:
                     h = np.load(os.path.join(root, file))
                     h = tf.constant(h, dtype=tf.complex64)
                     h_list2.append(h)
         else:
+            print("computing env csi...")
             scene = setScene(scene_env)
             if info.get("pos") is not None:
                 cell_pos = info.get("pos")
@@ -251,20 +252,26 @@ def main():
             
             for i,h in enumerate(h_list2):
                 h_np = h.numpy()
-                np.save(f"./Data/{scene_name}/{num_samples}_{x}_{y}_{cell_size}_h2/{i}.npy",h_np)
+                np.save(f"./Data/{scene_name}/{title}_env/{i}.npy",h_np)
             print("saved environment info")
-            with open(f"./Data/{scene_name}/saved.txt","w") as f:
+            with open(f"./Data/{scene_name}/{title}_saved.txt","w") as f:
                 f.write(f"{1}")
         
         # 读取仿真进度
-        if os.path.exists(f"./Data/{scene_name}/{tgname[0]}/saved.txt"):
-            with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","r") as f:
+        if os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt"):
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","r") as f:
                 saved = int(f.read())
+            scene = setScene(scene1,tgname,tgv)
+            if info.get("pos") is not None:
+                cell_pos = info.get("pos")
+            else:
+                cell_pos = getPos(map_center,x,y,cell_size)
         else:
             saved = 0
         
         # 计算含目标的CSI
         if saved == 0:
+            print("computing target csi...")
             scene = setScene(scene1,tgname,tgv)
             if info.get("pos") is not None:
                 cell_pos = info.get("pos")
@@ -273,28 +280,28 @@ def main():
             h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True,num_samples=num_samples)
             
             # save data
-            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_true.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_true.txt","w") as f:
                 for i in range(len(tau_true)):
                     f.write(f"{tau_true[i]}\n")
             
             for i,h in enumerate(h_list1):
                 h_np = h.numpy()
-                np.save(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1/{i}.npy",h_np)
+                np.save(f"./Data/{scene_name}/{tgname[0]}/{title}_h1/{i}.npy",h_np)
             print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
                 f.write(f"{saved}")
         else:
             h_list1 = []
             # 遍历文件夹，读取所有npy文件
-            for root, dirs, files in os.walk(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_h1"):
+            for root, dirs, files in os.walk(f"./Data/{scene_name}/{tgname[0]}/{title}_h1"):
                 for file in files:
                     h = np.load(os.path.join(root, file))
                     h = tf.constant(h, dtype=tf.complex64)
                     h_list1.append(h)
             # 读取tau_true
             tau_true = []
-            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_true.txt","r") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_true.txt","r") as f:
                 tau_true = f.readlines()
                 tau_true = np.array([float(i) for i in tau_true])
             
@@ -307,13 +314,13 @@ def main():
                 scene.remove("rx")
             crbs = scene.coverage_map_sensing(cell_pos=cell_pos,
                                     look_at=look_at,
-                                    batch_size=1,
+                                    batch_size=batch_size,
                                     singleBS=True,
-                                    num_samples=num_samples,
+                                    num_samples=num_samples*batch_size,
                                     max_depth=max_depth,
                                     diffraction=True,
                                     edge_diffraction=True,
-                                    num_time_steps=1)
+                                    num_time_steps=num_time_steps)
             
             crb = None
             for i in range(0,len(crbs)):
@@ -326,13 +333,13 @@ def main():
                 else:
                     crb = np.concatenate((crb,c),axis=None)
             crb = np.array(crb)
-            np.save(f"./Data/{scene_name}/{tgname[0]}/crb.npy",crb)
+            np.save(f"./Data/{scene_name}/{tgname[0]}/{title}_crb.npy",crb)
             print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
                 f.write(f"{saved}")
         else:
-            crb = np.load(f"./Data/{scene_name}/{tgname[0]}/crb.npy")
+            crb = np.load(f"./Data/{scene_name}/{tgname[0]}/{title}_crb.npy")
         
         # 计算music估计值
         if saved == 2:
@@ -343,19 +350,21 @@ def main():
                 h = h1-h2
                 tau = tau*1e9
                 start = tau-step*500
+                if start < 0:
+                    start = 0
                 end = tau+step*500
                 tau_est.append(music(h,frequencies,start=start,end=end,step=step))
             
             # write tau_est and mse to file
-            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_tau_est.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_est.txt","w") as f:
                 for i in range(len(tau_est)):
                     f.write(f"{tau_est[i]}\n")
-            with open(f"./Data/{scene_name}/{tgname[0]}/{num_samples}_{x}_{y}_{cell_size}_mse.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_mse.txt","w") as f:
                 for i in range(len(tau_est)):
                     f.write(f"{np.abs(tau_true[i]-tau_est[i])}\n")
             print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/saved.txt","w") as f:
+            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
                 f.write(f"{saved}")
         
 
