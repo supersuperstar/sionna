@@ -1937,7 +1937,6 @@ class Scene:
             else:
                 end = start + batch_size
             # update positions and look directions
-            # print(f"Computing cells {start} to {end}")
             i = 0
             for tx in self.transmitters.values():
                 if start+i >= end:

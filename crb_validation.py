@@ -16,19 +16,36 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sionna
 import tqdm
+import json
 import pandas as pd
 from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 # Import Sionna RT components
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
 from mysionna.rt.scattering_pattern import *
 
+
+#read config and turn it to global variables
+config = json.load(open("crb_validation_config.json"))
+subcarrier_spacing = config.get("subcarrier_spacing")
+subcarrier_num = config.get("subcarrier_num")
+num_time_steps = config.get("num_time_steps")
+ebno_db = config.get("ebno_db")
+num_samples = config.get("num_samples")
+batch_size = config.get("batch_size")
+max_depth = config.get("max_depth")
+step = config.get("step")
+los = config.get("los")
+reflection = config.get("reflection")
+scattering = config.get("scattering")
+diffraction = config.get("diffraction")
+edge_diffraction = config.get("edge_diffraction")
+
 scene_info = [
     {
-        # num_samples1000000
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor1.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human1"],
-        "tgv":[(0,-0.8,0)],
+        "tgv":[(-0.0,0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
@@ -39,7 +56,7 @@ scene_info = [
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor2.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human2"],
-        "tgv":[(0.8,0,0)],
+        "tgv":[(0,-0.0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
@@ -50,7 +67,7 @@ scene_info = [
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor3.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human3"],
-        "tgv":[(0,0,0)],
+        "tgv":[(0.0,0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
@@ -59,17 +76,10 @@ scene_info = [
     }
 ]
 
-subcarrier_spacing = 15e3
-subcarrier_num = 2048
-num_time_steps = 1
-ebno_db = 30
-num_samples = 1000000
-batch_size = 10 # crb batch size
-max_depth = 1
-step = 0.1
 tf.random.set_seed(1) # Set global random seed for reproducibility
 
-def CSI(scene:Scene,info,cell_pos,return_tau=False,num_samples=num_samples,los=True,scattering=True,diffraction=True,edge_diffraction=True,reflection=True):
+
+def CSI(scene:Scene,info,cell_pos,return_tau=False):
     look_at = info.get("look_at")
     h = []
     tau_true = []
@@ -134,7 +144,8 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
 
     P_tau = P_tau_array.stack()
     # 计算谱函数
-    P_tau_real, P_tau_imag = tf.math.real(P_tau), tf.math.imag(P_tau)
+    P_tau_real = tf.math.real(P_tau)
+    P_tau_imag = tf.math.imag(P_tau)
     P_abs = tf.math.sqrt(P_tau_real**2 + P_tau_imag**2)
     P_norm = 10 * tf.math.log(P_abs / tf.reduce_max(P_abs), 10)
     P_norm = tf.squeeze(P_norm)
@@ -187,14 +198,12 @@ def setScene(filename,tgname=None,tgv=None):
     #################配置场景材质属性#################
     p1 = LambertianPattern()
     p2 = DirectivePattern(20)
-    scene.get("itu_plywood").scattering_coefficient = 0.4
-    scene.get("itu_plywood").scattering_pattern = p2
-    scene.get("itu_concrete").scattering_coefficient = 0.3
+    scene.get("itu_plywood").scattering_coefficient = 0.3
+    scene.get("itu_plywood").scattering_pattern = p1
+    scene.get("itu_concrete").scattering_coefficient = 0.5
     scene.get("itu_concrete").scattering_pattern = p1
-    scene.get("itu_floorboard").scattering_coefficient = 0.4
-    scene.get("itu_floorboard").scattering_pattern = p2
-    scene.get("itu_ceiling_board").scattering_coefficient = 0.4
-    scene.get("itu_ceiling_board").scattering_pattern = p2
+    scene.get("itu_glass").scattering_coefficient = 0.25
+    scene.get("itu_glass").scattering_pattern = p2
     #################配置感知目标#################
     if tgname is not None and tgv is not None:
         scene.target_names = tgname
@@ -202,7 +211,81 @@ def setScene(filename,tgname=None,tgv=None):
     
     return scene
         
-        
+
+def getRayType():
+    ray_type=""
+    if los:
+        ray_type += "T"
+    else:
+        ray_type += "F"
+    if reflection:
+        ray_type += "T"
+    else:
+        ray_type += "F"
+    if scattering:
+        ray_type += "T"
+    else:
+        ray_type += "F"
+    if diffraction:
+        ray_type += "T"
+    else:
+        ray_type += "F"
+    if edge_diffraction:
+        ray_type += "T"
+    else:
+        ray_type += "F"
+    return ray_type
+    
+
+def saveFig(title,tau_true,tau_est,crb,col):
+    pad = 0
+    tau_true = np.array(tau_true)
+    tau_est = np.array(tau_est)
+    crb = crb*3e8
+    crb = np.log10(crb)
+    crb = np.reshape(crb,(-1,col))
+    mse = np.abs(tau_true-tau_est)
+    mse = np.reshape(mse,(-1,col))
+    tau_true = np.reshape(tau_true,(-1,col))
+    tau_est = np.reshape(tau_est,(-1,col))
+    mask = mse >= 2
+    mse[mask] = pad
+    mask = tau_true==999999 
+    mse[mask] = pad
+    mask = tau_true==0
+    mse[mask] = pad
+    mask = tau_true==-1
+    mse[mask] = pad
+    mse = mse*3e8
+    mse = np.log10(mse)
+    
+    mse = np.rot90(mse)
+    crb = np.rot90(crb)
+    # x轴对称
+    mse = np.flip(mse,1)
+    crb = np.flip(crb,1)
+    mse = np.flip(mse,0)
+    crb = np.flip(crb,0)
+
+    # set figure size
+    plt.figure(figsize=(10, 5))
+    plt.subplots_adjust(wspace=0.5)
+    plt.subplot(121)
+    plt.title("Indoor Sensing MSE")
+    plt.xlabel("x axis(0.5m)")
+    plt.ylabel("y axis(0.5m)")
+    plt.imshow(mse)
+    # set colorbar size
+    plt.colorbar(fraction=0.046, pad=0.04)
+    plt.subplot(122)
+    plt.title("Indoor Sensing CRB")
+    plt.xlabel("x axis(0.5m)")
+    plt.ylabel("y axis(0.5m)")
+    plt.imshow(crb)
+    plt.colorbar(fraction=0.046, pad=0.04)
+    plt.savefig(f"{title}/out.png")
+
+
 def main():
     saved = 0
     frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
@@ -217,30 +300,19 @@ def main():
         look_at = info.get("look_at")
         tgname = info.get("tgname")
         tgv = info.get("tgv")
-        title = f"{num_samples}-{max_depth}-{step}-{batch_size}-{x}-{y}-{cell_size}"
+        look_at = info.get("look_at")
+        ray_type = getRayType()
+        env_title = f"./Data/{scene_name}/{num_samples}-{ray_type}-{max_depth}-{x}-{y}-{cell_size}"
+        title = f"./Data/{scene_name}/{tgname[0]}/{num_samples}-{ray_type}-{max_depth}-{step}-{batch_size}-{x}-{y}-{cell_size}"
         print(f"scene: {scene_name}, tgname: {tgname[0]}")
         
         # create folder
-        if not os.path.exists(f"./Data"):
-            os.makedirs(f"./Data")
-        if not os.path.exists(f"./Data/{scene_name}"):
-            os.makedirs(f"./Data/{scene_name}")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}")
-        if not os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{title}_h1"):
-            os.makedirs(f"./Data/{scene_name}/{tgname[0]}/{title}_h1")
-        if not os.path.exists(f"./Data/{scene_name}/{title}_env"):
-            os.makedirs(f"./Data/{scene_name}/{title}_env")
+        if not os.path.exists(f"{title}"):
+            os.makedirs(f"{title}")
         
         # 计算环境杂波信道
-        if os.path.exists(f"./Data/{scene_name}/{title}_saved.txt"):
-            h_list2 = []
-            # 遍历文件夹，读取所有npy文件
-            for root, dirs, files in os.walk(f"./Data/{scene_name}/{title}_env"):
-                for file in files:
-                    h = np.load(os.path.join(root, file))
-                    h = tf.constant(h, dtype=tf.complex64)
-                    h_list2.append(h)
+        if os.path.exists(f"{env_title}_env.npy"):
+            h_list2 = np.load(f"{env_title}_env.npy",allow_pickle=True)
         else:
             print("computing env csi...")
             scene = setScene(scene_env)
@@ -248,18 +320,14 @@ def main():
                 cell_pos = info.get("pos")
             else:
                 cell_pos = getPos(map_center,x,y,cell_size)
-            h_list2 = CSI(scene,info,cell_pos,num_samples=num_samples)
-            
-            for i,h in enumerate(h_list2):
-                h_np = h.numpy()
-                np.save(f"./Data/{scene_name}/{title}_env/{i}.npy",h_np)
+            h_list2 = CSI(scene,info,cell_pos)
+            h_np = np.stack(h_list2)
+            np.save(f"{env_title}_env.npy",h_np)
             print("saved environment info")
-            with open(f"./Data/{scene_name}/{title}_saved.txt","w") as f:
-                f.write(f"{1}")
         
         # 读取仿真进度
-        if os.path.exists(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt"):
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","r") as f:
+        if os.path.exists(f"{title}/saved.txt"):
+            with open(f"{title}/saved.txt","r") as f:
                 saved = int(f.read())
             scene = setScene(scene1,tgname,tgv)
             if info.get("pos") is not None:
@@ -277,31 +345,23 @@ def main():
                 cell_pos = info.get("pos")
             else:
                 cell_pos = getPos(map_center,x,y,cell_size)
-            h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True,num_samples=num_samples)
+            h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True)
             
             # save data
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_true.txt","w") as f:
+            with open(f"{title}/tau_true.txt","w") as f:
                 for i in range(len(tau_true)):
                     f.write(f"{tau_true[i]}\n")
-            
-            for i,h in enumerate(h_list1):
-                h_np = h.numpy()
-                np.save(f"./Data/{scene_name}/{tgname[0]}/{title}_h1/{i}.npy",h_np)
+            h_np = np.stack(h_list1)
+            np.save(f"{title}/h.npy",h_np)
             print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
+            with open(f"{title}/saved.txt","w") as f:
                 f.write(f"{saved}")
         else:
-            h_list1 = []
-            # 遍历文件夹，读取所有npy文件
-            for root, dirs, files in os.walk(f"./Data/{scene_name}/{tgname[0]}/{title}_h1"):
-                for file in files:
-                    h = np.load(os.path.join(root, file))
-                    h = tf.constant(h, dtype=tf.complex64)
-                    h_list1.append(h)
+            h_list1 = np.load(f"{title}/h.npy",allow_pickle=True)
             # 读取tau_true
             tau_true = []
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_true.txt","r") as f:
+            with open(f"{title}/tau_true.txt","r") as f:
                 tau_true = f.readlines()
                 tau_true = np.array([float(i) for i in tau_true])
             
@@ -318,8 +378,11 @@ def main():
                                     singleBS=True,
                                     num_samples=num_samples*batch_size,
                                     max_depth=max_depth,
-                                    diffraction=True,
-                                    edge_diffraction=True,
+                                    los=los,
+                                    reflection=reflection,
+                                    scattering=scattering,
+                                    diffraction=diffraction,
+                                    edge_diffraction=edge_diffraction,
                                     num_time_steps=num_time_steps)
             
             crb = None
@@ -333,53 +396,55 @@ def main():
                 else:
                     crb = np.concatenate((crb,c),axis=None)
             crb = np.array(crb)
-            np.save(f"./Data/{scene_name}/{tgname[0]}/{title}_crb.npy",crb)
+            np.save(f"{title}/crb.npy",crb)
             print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
+            with open(f"{title}/saved.txt","w") as f:
                 f.write(f"{saved}")
         else:
-            crb = np.load(f"./Data/{scene_name}/{tgname[0]}/{title}_crb.npy")
+            crb = np.load(f"{title}/crb.npy")
         
         # 计算music估计值
         if saved == 2:
             print("music...")
             tau_est = []
-            h = zip(tau_true,h_list1,h_list2)
-            for (tau,h1,h2) in tqdm.tqdm(h):
+            i = 0
+            bar = tqdm.tqdm(total=len(tau_true))
+            for i in range(len(tau_true)):
+                tau = tau_true[i]
+                h1 = h_list1[i]
+                h2 = h_list2[i]
                 h = h1-h2
                 tau = tau*1e9
                 start = tau-step*500
                 if start < 0:
                     start = 0
                 end = tau+step*500
-                tau_est.append(music(h,frequencies,start=start,end=end,step=step))
+                try:
+                    t = music(h,frequencies,start=start,end=end,step=step)
+                except:
+                    t = 0
+                tau_est.append(t)
+                bar.update(1)
             
             # write tau_est and mse to file
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_tau_est.txt","w") as f:
+            with open(f"{title}/tau_est.txt","w") as f:
                 for i in range(len(tau_est)):
                     f.write(f"{tau_est[i]}\n")
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_mse.txt","w") as f:
-                for i in range(len(tau_est)):
-                    f.write(f"{np.abs(tau_true[i]-tau_est[i])}\n")
-            print("saved")
             saved += 1
-            with open(f"./Data/{scene_name}/{tgname[0]}/{title}_saved.txt","w") as f:
+            with open(f"{title}/saved.txt","w") as f:
                 f.write(f"{saved}")
+            print("saved")
+        else:
+            tau_est = []
+            with open(f"{title}/tau_est.txt","r") as f:
+                tau_est = f.readlines()
+                tau_est = np.array([float(i) for i in tau_est])
         
-
+        saveFig(title,tau_true,tau_est,crb,int(y/cell_size)+1)
+                
+        print ("done")
+        
 
 if __name__ == "__main__":
     main()
-    
-    # with open("./Data/indoor/tau_true.txt","r") as f:
-    #     tau_true = f.readlines()
-    #     tau_true = np.array([float(i) for i in tau_true])
-    # with open("./Data/indoor/tau_est.txt","r") as f:
-    #     tau_est = f.readlines()
-    #     tau_est = np.array([float(i) for i in tau_est])
-    
-    # mse = np.abs(tau_true - tau_est)
-    # mse = np.reshape(mse,(-1,21))
-    # plt.imshow(mse)
-    # plt.colorbar()
