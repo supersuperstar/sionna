@@ -669,7 +669,7 @@ class Paths:
 
         return a,tau
 
-    def crb_delay(self, snr=10,diag=False):
+    def crb_delay(self, snr=10,diag=False,mask=None):
         """compute the crb of the delay estimation
 
         Args:
@@ -683,10 +683,13 @@ class Paths:
         a = self._a
         tau = self._tau
         
+        if mask is not None:
+            a = tf.where(mask, a, tf.zeros_like(a))
+        
         if self._scene.synthetic_array:
             tau = tf.expand_dims(tau, axis=3)
             tau = tf.expand_dims(tau, axis=2)
-            
+        
         if diag: 
             # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,num_tx]
             a = tf.transpose(a,perm=[0,2,4,5,6,1,3])

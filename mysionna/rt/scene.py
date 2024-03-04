@@ -1835,7 +1835,7 @@ class Scene:
 
         return paths_obj_names
     
-    def coverage_map_sensing(self,map_center=[0,0,0], map_size_x=10, map_size_y=10, cell_size=1,cell_pos=None, look_at=[0,0,0],batch_size=100,singleBS=True,
+    def coverage_map_sensing(self,only_target=False,map_center=[0,0,0], map_size_x=10, map_size_y=10, cell_size=1,cell_pos=None, look_at=[0,0,0],batch_size=100,singleBS=True,
                              max_depth=3,num_samples=100000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scat_keep_prob=0.001,
                              subcarrier_spacing=15e3,num_time_steps=14):
         """_summary_
@@ -1925,6 +1925,7 @@ class Scene:
         # dictionary of objects' names and index
         obj_names = {}
         for i,s in enumerate(self._scene.shapes()):
+            # nams format is 'mesh-XX'
             name = s.id().split('-')[1] 
             obj_names[name] = i 
         
@@ -1965,8 +1966,9 @@ class Scene:
             path.normalize_delays = False
             v=self.compute_target_velocities(path)
             path.apply_doppler(sampling_frequency=subcarrier_spacing,num_time_steps=num_time_steps,target_velocities=v)
-            # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
-            crb = path.crb_delay(diag=singleBS)
+            if not only_target:
+                crb = path.crb_delay(diag=singleBS)
+            #------------------ get the mask of objects -------------------
             # [max_depth,num_targets,num_sources,max_num_paths]
             objects = path.objects
             # [max_num_wedges,2]
@@ -1999,6 +2001,7 @@ class Scene:
             updates2 = tf.gather(wedge2, tf.reshape(objects[is_wedge], [-1]))
             objects_wedge1 = tf.tensor_scatter_nd_update(objects, indices, updates1)
             objects_wedge2 = tf.tensor_scatter_nd_update(objects, indices, updates2)
+            
             for name in self.target_names:
                 idx = obj_names[name]
                 # mask which paths interact with the target and the paths
@@ -2028,9 +2031,13 @@ class Scene:
                     mask = tf.linalg.diag_part(mask)
                     # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
                     mask = tf.expand_dims(mask, axis=-1)
+                    # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
                     mask = tf.transpose(mask,perm=[0,5,1,6,2,3,4])
                 
-                # crb: [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+                if only_target:
+                    # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+                    crb = path.crb_delay(diag=singleBS,mask = mask)
+                    
                 crb_target = tf.where(mask, crb, 1)
                 crb_target = tf.reduce_min(crb_target, axis=6)
                 crb_target = tf.reduce_min(crb_target, axis=5)

@@ -45,33 +45,33 @@ scene_info = [
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor1.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human1"],
-        "tgv":[(-0.0,0,0)],
+        "tgv":[(0,0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
-        "cell_size":0.5,
+        "cell_size":0.2,
         "look_at":[-3.37234,2.18367,1.20838],
     },
     {
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor2.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human2"],
-        "tgv":[(0,-0.0,0)],
+        "tgv":[(0,0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
-        "cell_size":0.5,
+        "cell_size":0.2,
         "look_at":[-2.81027,-1.92977,1.20838]
     },
     {
         "scene_name":"indoor",
         "paths":["./scenes/Indoor/indoor3.xml","./scenes/Indoor/indoor.xml"],
         "tgname":["human3"],
-        "tgv":[(0.0,0,0)],
+        "tgv":[(0,0,0)],
         "map_center":[0,0,2.95],
         "map_size_x":10,
         "map_size_y":6,
-        "cell_size":0.5,
+        "cell_size":0.2,
         "look_at":[2.97116,-0.235489,1.20838]
     }
 ]
@@ -101,6 +101,8 @@ def CSI(scene:Scene,info,cell_pos,return_tau=False):
         if return_tau:
             v,obj_name = scene.compute_target_velocities(paths, return_obj_names=True)
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps,target_velocities=v)
+            # split obj_name by '&'
+            # obj_name = [i.split("&") for i in obj_name]
         else: 
             paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps)
         a, tau = paths.cir()
@@ -109,7 +111,7 @@ def CSI(scene:Scene,info,cell_pos,return_tau=False):
         h.append(h_freq)
         # 记录真实tau
         if return_tau:
-            tau_true.append(999999.0)
+            tau_true.append(1)
             tgname = info.get("tgname")
             for name in tgname:
                 mask = tf.equal(obj_name, name)
@@ -237,7 +239,7 @@ def getRayType():
     return ray_type
     
 
-def saveFig(title,tau_true,tau_est,crb,col):
+def saveFig(title,tau_true,tau_est,crb,col,step):
     pad = 0
     tau_true = np.array(tau_true)
     tau_est = np.array(tau_est)
@@ -245,6 +247,7 @@ def saveFig(title,tau_true,tau_est,crb,col):
     crb = np.log10(crb)
     crb = np.reshape(crb,(-1,col))
     mse = np.abs(tau_true-tau_est)
+    np.save(f"{title}/mse_{step}.npy",mse)
     mse = np.reshape(mse,(-1,col))
     tau_true = np.reshape(tau_true,(-1,col))
     tau_est = np.reshape(tau_est,(-1,col))
@@ -272,22 +275,21 @@ def saveFig(title,tau_true,tau_est,crb,col):
     plt.subplots_adjust(wspace=0.5)
     plt.subplot(121)
     plt.title("Indoor Sensing MSE")
-    plt.xlabel("x axis(0.5m)")
-    plt.ylabel("y axis(0.5m)")
+    plt.xlabel("x axis")
+    plt.ylabel("y axis")
     plt.imshow(mse)
     # set colorbar size
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.subplot(122)
     plt.title("Indoor Sensing CRB")
-    plt.xlabel("x axis(0.5m)")
-    plt.ylabel("y axis(0.5m)")
+    plt.xlabel("x axis")
+    plt.ylabel("y axis")
     plt.imshow(crb)
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.savefig(f"{title}/out.png")
 
 
 def main():
-    saved = 0
     frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
     for info in scene_info:
         scene_name = info.get("scene_name")
@@ -303,12 +305,18 @@ def main():
         look_at = info.get("look_at")
         ray_type = getRayType()
         env_title = f"./Data/{scene_name}/{num_samples}-{ray_type}-{max_depth}-{x}-{y}-{cell_size}"
-        title = f"./Data/{scene_name}/{tgname[0]}/{num_samples}-{ray_type}-{max_depth}-{step}-{batch_size}-{x}-{y}-{cell_size}"
+        title = f"./Data/{scene_name}/{tgname[0]}/{tgv[0]}/{num_samples}-{ray_type}-{max_depth}-{x}-{y}-{cell_size}"
         print(f"scene: {scene_name}, tgname: {tgname[0]}")
         
         # create folder
         if not os.path.exists(f"{title}"):
             os.makedirs(f"{title}")
+        
+        # 获取位置信息
+        if info.get("pos") is not None:
+            cell_pos = info.get("pos")
+        else:
+            cell_pos = getPos(map_center,x,y,cell_size)
         
         # 计算环境杂波信道
         if os.path.exists(f"{env_title}_env.npy"):
@@ -316,35 +324,17 @@ def main():
         else:
             print("computing env csi...")
             scene = setScene(scene_env)
-            if info.get("pos") is not None:
-                cell_pos = info.get("pos")
-            else:
-                cell_pos = getPos(map_center,x,y,cell_size)
             h_list2 = CSI(scene,info,cell_pos)
             h_np = np.stack(h_list2)
             np.save(f"{env_title}_env.npy",h_np)
             print("saved environment info")
         
-        # 读取仿真进度
-        if os.path.exists(f"{title}/saved.txt"):
-            with open(f"{title}/saved.txt","r") as f:
-                saved = int(f.read())
-            scene = setScene(scene1,tgname,tgv)
-            if info.get("pos") is not None:
-                cell_pos = info.get("pos")
-            else:
-                cell_pos = getPos(map_center,x,y,cell_size)
-        else:
-            saved = 0
-        
+        # 设置目标场景信息
+        scene = setScene(scene1,tgname,tgv)
+    
         # 计算含目标的CSI
-        if saved == 0:
+        if os.path.exists(f"{title}/h.npy") is False or os.path.exists(f"{title}/tau_true.txt") is False:
             print("computing target csi...")
-            scene = setScene(scene1,tgname,tgv)
-            if info.get("pos") is not None:
-                cell_pos = info.get("pos")
-            else:
-                cell_pos = getPos(map_center,x,y,cell_size)
             h_list1,tau_true = CSI(scene,info,cell_pos,return_tau=True)
             
             # save data
@@ -353,10 +343,7 @@ def main():
                     f.write(f"{tau_true[i]}\n")
             h_np = np.stack(h_list1)
             np.save(f"{title}/h.npy",h_np)
-            print("saved")
-            saved += 1
-            with open(f"{title}/saved.txt","w") as f:
-                f.write(f"{saved}")
+            print("saved CSI info")
         else:
             h_list1 = np.load(f"{title}/h.npy",allow_pickle=True)
             # 读取tau_true
@@ -366,13 +353,14 @@ def main():
                 tau_true = np.array([float(i) for i in tau_true])
             
         # 计算crb
-        if saved == 1:
+        if os.path.exists(f"{title}/crb_{batch_size}.npy") is False:
             print("computing crb...")
             if scene.get("tx") is not None:
                 scene.remove("tx")
             if scene.get("rx") is not None:
                 scene.remove("rx")
-            crbs = scene.coverage_map_sensing(cell_pos=cell_pos,
+            crbs = scene.coverage_map_sensing(only_target=True,
+                                    cell_pos=cell_pos,
                                     look_at=look_at,
                                     batch_size=batch_size,
                                     singleBS=True,
@@ -396,16 +384,13 @@ def main():
                 else:
                     crb = np.concatenate((crb,c),axis=None)
             crb = np.array(crb)
-            np.save(f"{title}/crb.npy",crb)
-            print("saved")
-            saved += 1
-            with open(f"{title}/saved.txt","w") as f:
-                f.write(f"{saved}")
+            np.save(f"{title}/crb_{batch_size}.npy",crb)
+            print("saved crb")            
         else:
-            crb = np.load(f"{title}/crb.npy")
+            crb = np.load(f"{title}/crb_{batch_size}.npy")
         
         # 计算music估计值
-        if saved == 2:
+        if os.path.exists(f"{title}/tau_est_{step}.txt") is False:
             print("music...")
             tau_est = []
             i = 0
@@ -416,10 +401,12 @@ def main():
                 h2 = h_list2[i]
                 h = h1-h2
                 tau = tau*1e9
-                start = tau-step*500
-                if start < 0:
-                    start = 0
-                end = tau+step*500
+                # start = tau-step*500
+                # if start < 0:
+                #     start = 0
+                # end = tau+step*500
+                start = 0
+                end = 200
                 try:
                     t = music(h,frequencies,start=start,end=end,step=step)
                 except:
@@ -428,20 +415,16 @@ def main():
                 bar.update(1)
             
             # write tau_est and mse to file
-            with open(f"{title}/tau_est.txt","w") as f:
+            with open(f"{title}/tau_est_{step}.txt","w") as f:
                 for i in range(len(tau_est)):
                     f.write(f"{tau_est[i]}\n")
-            saved += 1
-            with open(f"{title}/saved.txt","w") as f:
-                f.write(f"{saved}")
-            print("saved")
         else:
             tau_est = []
-            with open(f"{title}/tau_est.txt","r") as f:
+            with open(f"{title}/tau_est_{step}.txt","r") as f:
                 tau_est = f.readlines()
                 tau_est = np.array([float(i) for i in tau_est])
-        
-        saveFig(title,tau_true,tau_est,crb,int(y/cell_size)+1)
+            
+        saveFig(title,tau_true,tau_est,crb,int(y/cell_size)+1,step)
                 
         print ("done")
         
