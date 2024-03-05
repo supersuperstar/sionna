@@ -111,7 +111,7 @@ def CSI(scene:Scene,info,cell_pos,return_tau=False):
         h.append(h_freq)
         # 记录真实tau
         if return_tau:
-            tau_true.append(1)
+            tau_true.append(99999)
             tgname = info.get("tgname")
             for name in tgname:
                 mask = tf.equal(obj_name, name)
@@ -119,7 +119,9 @@ def CSI(scene:Scene,info,cell_pos,return_tau=False):
                 tau = tf.squeeze(tau)
                 mask = tf.squeeze(mask)
                 tau_obj = tf.gather(tau, tf.where(mask))
-                tau_true[-1] = min(tau_true[-1],tf.reduce_min(tau_obj))
+                tau_obj = tf.gather(tau_obj,tf.where(tau_obj>0))
+                if tau_obj.shape[0] > 0:
+                    tau_true[-1] = min(tau_true[-1],tf.reduce_min(tau_obj))
         
     if return_tau:
         return h,tau_true
@@ -251,9 +253,9 @@ def saveFig(title,tau_true,tau_est,crb,col,step):
     mse = np.reshape(mse,(-1,col))
     tau_true = np.reshape(tau_true,(-1,col))
     tau_est = np.reshape(tau_est,(-1,col))
-    mask = mse >= 2
+    mask = mse >= 0.1
     mse[mask] = pad
-    mask = tau_true==999999 
+    mask = tau_true>=0.1
     mse[mask] = pad
     mask = tau_true==0
     mse[mask] = pad
