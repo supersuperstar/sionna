@@ -15,6 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import mitsuba as mi
 import tensorflow as tf
+import xml.etree.ElementTree as ET
 import numpy as np
 
 from tqdm import tqdm
@@ -2215,13 +2216,13 @@ class Scene:
         if value is None:
             self._target_velocities = value
             return
-        if not isinstance(value, list):
-            raise ValueError('target_velocities must be a list of 3D vector')
+        if not isinstance(value, list) and not isinstance(value, tuple):
+            raise ValueError('target_velocities must be a tuple/list of 3D vector')
         for v in value:
-            if not isinstance(v, tuple):
-                raise ValueError('target_velocities must be a tuple of 3D vector')
+            if not isinstance(v, tuple) and not isinstance(v, list):
+                raise ValueError('target_velocities must be a tuple/list of 3D vector')
             if len(v) != 3:
-                raise ValueError('target_velocities must be a list of 3D vector')
+                raise ValueError('target_velocities must be a tuple/list of 3D vector')
         self._target_velocities = tf.convert_to_tensor(value, dtype=tf.float32)
     
 
@@ -2344,3 +2345,61 @@ Example scene containing a metallic box
 .. figure:: ../figures/box.png
    :align: center
 """
+
+class Target:
+    def __init__(self,filename:str,material:str,translate=(0.,0.,0.),scale=(1.,1.,1.),rotate=(0.,0.,0.,0.)):
+        self.filename = filename
+        self.material = material
+        self.translate = translate
+        self.scale = scale
+        self.rotate = rotate
+
+
+def load_sensing_scene(filename,targets,dtype=tf.complex64):
+    root = ET.parse(filename).getroot()
+    if isinstance(targets, list):
+        if  not all(isinstance(x, Target) for x in targets):
+            raise ValueError('targets must be a list of class Target')
+        for target in targets:
+            xml = target_to_xml(target)
+            xml = ET.fromstring(xml)
+            root.append(xml)
+    elif isinstance(targets, Target):
+        xml = target_to_xml(targets)
+        xml = ET.fromstring(xml)
+        root.append(xml)
+    else:
+        raise ValueError('targets must be a list of class Target or class Target')
+    new_filename = filename.replace('.xml','_tmp.xml')
+    with open(new_filename, 'wb') as f:
+        f.write(ET.tostring(root))
+    scene = load_scene(new_filename,dtype)
+    return scene
+
+def target_to_xml(target:Target):
+    # pylint: disable=line-too-long
+    r"""
+    Convert a target to a string in the XML format used by Mitsuba
+
+    Input
+    -----
+    target : :class:`~sionna.rt.Target` Target to convert.
+    
+    Output
+    ------
+    xml : str
+        String in the XML format used by Mitsuba
+    """
+    name = target.filename.split('.')[0]
+    name = name.split('/')[-1]
+    xml = f"""<shape type="ply" id="mesh-{name}" name="mesh-{name}">
+    <string name="filename" value="{target.filename}"/>
+    <boolean name="face_normals" value="true"/>
+	<ref id="mat-{target.material}" name="bsdf"/>
+    <transform name="to_world">
+        <rotate x="{target.rotate[0]}" y="{target.rotate[1]}" z="{target.rotate[2]}" angle="{target.rotate[3]}"/>
+        <scale x="{target.scale[0]}" y="{target.scale[1]}" z="{target.scale[2]}"/>
+        <translate x="{target.translate[0]}" y="{target.translate[1]}" z="{target.translate[2]}"/>
+    </transform>
+    </shape>"""
+    return xml

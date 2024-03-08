@@ -1,0 +1,141 @@
+<scene version="2.1.0">
+
+
+
+	<default name="spp" value="4096" />
+	<default name="resx" value="1920" />
+	<default name="resy" value="1080" />
+
+
+
+	<integrator type="path" id="elm__0" name="elm__0">
+		<integer name="max_depth" value="12" />
+	</integrator>
+	<sensor type="perspective" id="camera" name="camera">
+		<string name="fov_axis" value="x" />
+		<float name="fov" value="39.597755" />
+		<float name="principal_point_offset_x" value="0.000000" />
+		<float name="principal_point_offset_y" value="-0.000000" />
+		<float name="near_clip" value="0.100000" />
+		<float name="far_clip" value="1000.000000" />
+		<transform name="to_world">
+			<rotate x="1" angle="109.56217655158244" />
+			<rotate y="1" angle="0.7892924449792952" />
+			<rotate z="1" angle="-121.76083976771184" />
+			<translate value="4.602375 -2.357080 3.114122" />
+		</transform>
+		<sampler type="independent" name="sampler">
+			<integer name="sample_count" value="$spp" />
+		</sampler>
+		<film type="hdrfilm" name="film">
+			<integer name="width" value="$resx" />
+			<integer name="height" value="$resy" />
+		</film>
+	</sensor>
+
+
+
+	<bsdf type="diffuse" id="mat-itu_plywood" name="mat-itu_plywood">
+		<rgb value="0.3 0.1 0.1" name="reflectance" />
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_concrete" name="mat-itu_concrete">
+		<rgb value="0.8 0.8 0.8" name="reflectance" />
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_glass" name="mat-itu_glass">
+		<rgb value="0.16 0.8 0.634" name="reflectance" />
+	</bsdf>
+
+
+
+	<emitter type="directional" id="emit-light" name="emit-light">
+		<rgb value="1.000000 1.000000 1.000000" name="irradiance" />
+		<transform name="to_world">
+			<matrix value="0.823392 0.507795 -0.253318 0.304171 0.567473 -0.736800 0.367559 -5.957753 0.000000 -0.446396 -0.894836 6.879978 0.000000 0.000000 0.000000 1.000000" />
+		</transform>
+	</emitter>
+
+
+
+	<shape type="ply" id="mesh-table1" name="mesh-table1">
+		<string name="filename" value="meshes/table1.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-table2" name="mesh-table2">
+		<string name="filename" value="meshes/table2.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-table3" name="mesh-table3">
+		<string name="filename" value="meshes/table3.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-table4" name="mesh-table4">
+		<string name="filename" value="meshes/table4.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-table5" name="mesh-table5">
+		<string name="filename" value="meshes/table5.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-floor" name="mesh-floor">
+		<string name="filename" value="meshes/floor.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-wall1" name="mesh-wall1">
+		<string name="filename" value="meshes/wall1.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-wall2" name="mesh-wall2">
+		<string name="filename" value="meshes/wall2.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-wall3" name="mesh-wall3">
+		<string name="filename" value="meshes/wall3.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-wall4" name="mesh-wall4">
+		<string name="filename" value="meshes/wall4.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-ceiling" name="mesh-ceiling">
+		<string name="filename" value="meshes/ceiling.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_concrete" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-door" name="mesh-door">
+		<string name="filename" value="meshes/door.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-tvstand" name="mesh-tvstand">
+		<string name="filename" value="meshes/tvstand.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_plywood" name="bsdf" />
+	</shape>
+	<shape type="ply" id="mesh-tv" name="mesh-tv">
+		<string name="filename" value="meshes/tv.ply" />
+		<boolean name="face_normals" value="true" />
+		<ref id="mat-itu_glass" name="bsdf" />
+	</shape>
+
+
+
+<shape type="ply" id="mesh-human" name="mesh-human">
+    <string name="filename" value="meshes/human.ply" />
+    <boolean name="face_normals" value="true" />
+	<ref id="mat-itu_plywood" name="bsdf" />
+    <transform name="to_world">
+        <rotate x="0" y="0" z="0" angle="0" />
+        <scale x="1" y="1" z="1" />
+        <translate x="3" y="2" z="0" />
+    </transform>
+    </shape></scene>
