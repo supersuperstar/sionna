@@ -1838,7 +1838,7 @@ class Scene:
     
     def coverage_map_sensing(self,only_target=False,map_center=[0,0,0], map_size_x=10, map_size_y=10, cell_size=1,cell_pos=None, look_at=[0,0,0],batch_size=100,singleBS=True,
                              max_depth=3,num_samples=100000,los=True,reflection=True,diffraction=True,scattering=True,edge_diffraction=True,scat_keep_prob=0.001,
-                             subcarrier_spacing=15e3,num_time_steps=14):
+                             subcarrier_spacing=15e3,num_time_steps=14,snr=10,bar=True):
         """_summary_
 
         Args:
@@ -1932,7 +1932,8 @@ class Scene:
         
         start = 0  
         crbs=[]
-        pbar = tqdm(total=num)
+        if bar:
+            pbar = tqdm(total=num)
         while start < num:
             if start + batch_size > num:
                 end = num
@@ -1968,7 +1969,7 @@ class Scene:
             v=self.compute_target_velocities(path)
             path.apply_doppler(sampling_frequency=subcarrier_spacing,num_time_steps=num_time_steps,target_velocities=v)
             if not only_target:
-                crb = path.crb_delay(diag=singleBS)
+                crb = path.crb_delay(snr=snr,diag=singleBS)
             #------------------ get the mask of objects -------------------
             # [max_depth,num_targets,num_sources,max_num_paths]
             objects = path.objects
@@ -2044,9 +2045,10 @@ class Scene:
                 crb_target = tf.reduce_min(crb_target, axis=5)
                 crb_target = tf.reduce_min(crb_target, axis=4)
                 crb_target = tf.reduce_min(crb_target, axis=2)
-                crb_target = tf.where(crb_target == 1, 0, crb_target)
+                # crb_target = tf.where(crb_target == 1, 0, crb_target)
                 crbs[-1].append(crb_target)
-            pbar.update(i)
+            if bar:
+                pbar.update(i)
             
             del path
         
