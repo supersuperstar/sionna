@@ -44,13 +44,18 @@ class CNN(tf.keras.Model):
         return self.out(x)
 
 class DQNnet(tf.keras.Model):
-    def __init__(self, num_action):
-        super(DQNnet, self).__init__()
-        self.dense1 = tf.keras.layers.Dense(units=64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(units=32, activation='relu')
-        self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
-
+    def __init__(self, num_action,trainable=True):
+        super().__init__('mlp_q_network')
+        if trainable:
+            self.dense1 = tf.keras.layers.Dense(units=64, activation='relu')
+            self.dense2 = tf.keras.layers.Dense(units=32, activation='relu')
+            self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
+        else:
+            self.dense1 = tf.keras.layers.Dense(units=64, activation='relu',trainable=False)
+            self.dense2 = tf.keras.layers.Dense(units=32, activation='relu',trainable=False)
+            self.out = tf.keras.layers.Dense(units=num_action,activation='linear',trainable=False)
     def call(self, inputs):
+        x = tf.convert_to_tensor(inputs)
         x = self.dense1(inputs)
         x = self.dense2(x)
         return self.out(x)
@@ -69,13 +74,13 @@ class DQN():
         self.batch_size = batch_size
         self.memory = np.zeros((self.memory_size, num_feature*2+2)) # feature + action + reward + feature_ 
         self.memory_counter = 0
-        self.learn_step_counter = 1
+        self.learn_step_counter = 0
         self.cost_his = []
         self.mean_loss = 99999
         
         self.eval_net = DQNnet(self.num_action)
-        self.target_net = DQNnet(self.num_action)
-        self.eval_net.compile(optimizer=tf.keras.optimizers.Adam(self.lr),loss=tf.losses.mean_squared_error)
+        self.target_net = DQNnet(self.num_action,False)
+        self.eval_net.compile(optimizer=tf.keras.optimizers.Adam(self.lr),loss='mse')
         # self.loss_func = tf.losses.mean_squared_error
         # self.optimizer = tf.keras.optimizers.Adam(self.lr)
         if path is not None and isinstance(path,str) and os.path.exists(path):
@@ -115,18 +120,20 @@ class DQN():
         else:
             sample_index = np.random.choice(self.memory_counter, size=self.batch_size)
         batch_memory = self.memory[sample_index, :]
-        q_next, q_eval = self.target_net.predict(batch_memory[:, -self.num_feature:]), self.eval_net.predict(batch_memory[:, :self.num_feature])
+        
+        q_next = self.target_net.predict(batch_memory[:, -self.num_feature:])
+        q_eval = self.eval_net.predict(batch_memory[:, :self.num_feature])
+        
         q_target = q_eval.copy()
+        
         batch_index = np.arange(self.batch_size, dtype=np.int32)
         action = batch_memory[:, self.num_feature].astype(int)
         reward = batch_memory[:, self.num_feature+1]
         q_target[batch_index, action] = reward + self.gamma * tf.reduce_min(q_next, axis=1)
-        # with tf.GradientTape() as tape:
-        #     loss = self.loss_func(q_target, q_eval)
-        # # print(f"\r{self.learn_step_counter}th learning step, loss: {loss}", end="")
-        # grads = tape.gradient(loss, self.eval_net.trainable_variables)
-        # self.optimizer.apply_gradients(zip(grads, self.eval_net.trainable_variables))
+        
+        # train
         self.cost = self.eval_net.train_on_batch(batch_memory[:, :self.num_feature], q_target)
+        
         self.cost_his.append(self.cost)
         self.epsilon = self.epsilon + self.epsilon_increment if self.epsilon < self.epsilon_max else self.epsilon_max
         self.learn_step_counter += 1
@@ -442,7 +449,7 @@ class Environment():
         # 如果估计值和真实值的相差在真实值的10%以内，那么依据误差大小奖励在0.5~1之间
         # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0.1~0.5之间
         # 否则，惩罚值在-1~0之间
-        diff = (true_value-est_value)**2
+        diff = np.abs(true_value-est_value)
         if diff <= true_value*0.1:
             return 0.5 + 0.5*(1-diff/(true_value*0.01))
         elif diff <= true_value*0.2:
