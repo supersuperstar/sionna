@@ -172,6 +172,6 @@
     <transform name="to_world">
         <rotate x="0.0" y="0.0" z="0.0" angle="0.0" />
         <scale x="1.0" y="1.0" z="1.0" />
-        <translate x="-67.44217381195085" y="-6.296542321752057" z="0.0" />
+        <translate x="9" y="166" z="0" />
     </transform>
     </shape></scene>

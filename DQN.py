@@ -293,7 +293,7 @@ class Environment():
     def get_observation(self):
         paths = self.scene.compute_paths(**self.ray_tracing_params)
         paths.normalize_delays = False
-        self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(paths)
+        self.doppler_params["target_velocities"],obj_name = self.scene.compute_target_velocities(paths,True)
         paths.apply_doppler(**self.doppler_params)
         a,tau = paths.cir()
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=False)
@@ -439,16 +439,16 @@ class Environment():
             return 0
 
     def _get_reward(self,true_value,est_value):
-        # 如果估计值和真实值的相差在真实值的5%以内，那么依据误差大小奖励在0.5~1之间
-        # 如果估计值和真实值的相差在真实值的10%~5%，那么依据误差大小奖励在0.1~0.5之间
-        # 否则，惩罚值在-1~-0.1之间
-        diff = np.abs(true_value-est_value)
-        if diff <= true_value*0.05:
+        # 如果估计值和真实值的相差在真实值的10%以内，那么依据误差大小奖励在0.5~1之间
+        # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0.1~0.5之间
+        # 否则，惩罚值在-1~0之间
+        diff = (true_value-est_value)**2
+        if diff <= true_value*0.1:
             return 0.5 + 0.5*(1-diff/(true_value*0.01))
-        elif diff <= true_value*0.1:
-            return 0.1 + 0.4*(1-diff/(true_value*0.05))
+        elif diff <= true_value*0.2:
+            return 0.5*(1-diff/(true_value*0.05))
         else:
-            return -0.1 - 0.9*(diff/true_value)
+            return -(diff/true_value)
     
 def run():
     step = 0
