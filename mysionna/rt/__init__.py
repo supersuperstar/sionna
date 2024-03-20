@@ -27,7 +27,7 @@ else:
 # Objects available to the user
 ############################################
 # pylint: disable=wrong-import-position
-from .scene import load_scene, Scene
+from .scene import load_scene, load_sensing_scene, Scene, Target
 from .camera import Camera
 from .antenna import Antenna, compute_gain, visualize, iso_pattern,\
                      dipole_pattern, hw_dipole_pattern, tr38901_pattern,\

@@ -392,7 +392,6 @@ def main():
                 cell_pos = getPos(map_center,x,y,cell_size)
             
             np.save(f"{title}/cell_pos.npy",cell_pos)
-            
             # 计算环境杂波信道-----------------------------------
             if os.path.exists(f"{env_title}_env.npy"):
                 h_list2 = np.load(f"{env_title}_env.npy",allow_pickle=True)
@@ -403,7 +402,6 @@ def main():
                 h_np = np.stack(h_list2)
                 np.save(f"{env_title}_env.npy",h_np)
                 print("saved environment info")
-            
             # 设置目标场景信息-----------------------------------
             if len(info.get("tgpos")) <= i :
                 translate = [0,0,0]

@@ -2218,13 +2218,13 @@ class Scene:
         if value is None:
             self._target_velocities = value
             return
-        if not isinstance(value, list) and not isinstance(value, tuple):
-            raise ValueError('target_velocities must be a tuple/list of 3D vector')
-        for v in value:
-            if not isinstance(v, tuple) and not isinstance(v, list):
-                raise ValueError('target_velocities must be a tuple/list of 3D vector')
-            if len(v) != 3:
-                raise ValueError('target_velocities must be a tuple/list of 3D vector')
+        # if not isinstance(value, list) and not isinstance(value, tuple):
+        #     raise ValueError('target_velocities must be a tuple/list of 3D vector')
+        # for v in value:
+        #     if not isinstance(v, tuple) and not isinstance(v, list):
+        #         raise ValueError('target_velocities must be a tuple/list of 3D vector')
+        #     if len(v) != 3:
+        #         raise ValueError('target_velocities must be a tuple/list of 3D vector')
         self._target_velocities = tf.convert_to_tensor(value, dtype=tf.float32)
     
 
@@ -2375,8 +2375,7 @@ def load_sensing_scene(filename,targets,dtype=tf.complex64):
     new_filename = filename.replace('.xml','_tmp.xml')
     with open(new_filename, 'wb') as f:
         f.write(ET.tostring(root))
-    scene = load_scene(new_filename,dtype)
-    return scene
+    return load_scene(new_filename,dtype)
 
 def target_to_xml(target:Target):
     # pylint: disable=line-too-long

@@ -1,6 +1,6 @@
 {
     "subcarrier_spacing": 15000,
-    "subcarrier_num": 1024,
+    "subcarrier_num": 64,
     "num_time_steps": 1,
     "ebno_db": 20,
     "num_samples": 1000000,
@@ -11,5 +11,6 @@
     "reflection": true,
     "scattering": true,
     "diffraction": true,
-    "edge_diffraction": true
+    "edge_diffraction": true,
+    "scat_keep_prob": 0.002
 }
