@@ -1971,6 +1971,19 @@ class Scene:
             if not only_target:
                 crb = path.crb_delay(snr=snr,diag=singleBS)
             #------------------ get the mask of objects -------------------
+            masks = self.get_obj_mask(path,singleBS)
+            for mask in masks:
+                if only_target:
+                    # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
+                    crb = path.crb_delay(diag=singleBS,mask = mask)
+                crb_target = tf.where(mask, crb, 1)
+                crb_target = tf.reduce_min(crb_target, axis=6)
+                crb_target = tf.reduce_min(crb_target, axis=5)
+                crb_target = tf.reduce_min(crb_target, axis=4)
+                crb_target = tf.reduce_min(crb_target, axis=2)
+                # crb_target = tf.where(crb_target == 1, 0, crb_target)
+                crbs[-1].append(crb_target)
+            """ 
             # [max_depth,num_targets,num_sources,max_num_paths]
             objects = path.objects
             # [max_num_wedges,2]
@@ -2046,7 +2059,7 @@ class Scene:
                 crb_target = tf.reduce_min(crb_target, axis=4)
                 crb_target = tf.reduce_min(crb_target, axis=2)
                 # crb_target = tf.where(crb_target == 1, 0, crb_target)
-                crbs[-1].append(crb_target)
+                crbs[-1].append(crb_target)"""
             if bar:
                 pbar.update(i)
             
@@ -2192,7 +2205,83 @@ class Scene:
         k_r_v = tf.expand_dims(k_r_v, axis=0)
         
         return k_r_v
-  
+    
+    def get_obj_mask(self,path:Paths,singleBS=True):
+        # dictionary of objects' names and index
+        obj_names = {}
+        for i,s in enumerate(self._scene.shapes()):
+            # nams format is 'mesh-XX'
+            name = s.id().split('-')[1] 
+            obj_names[name] = i 
+        #------------------ get the mask of objects -------------------
+        # [max_depth,num_targets,num_sources,max_num_paths]
+        objects = path.objects
+        # [max_num_wedges,2]
+        wedges_2_objects = self._solver_paths._wedges_objects
+        # mask if the path between a target and a source is valid
+        # [1, num_targets, num_sources, max_num_paths]
+        mask_tg_sr = path.targets_sources_mask
+        mask_tg_sr = tf.expand_dims(tf.expand_dims(mask_tg_sr, axis=-1), axis=0)
+        # [max_num_paths]
+        types = path.types[0]
+        # [1, 1, 1, max_num_paths]
+        types = insert_dims(types, 3, 0)
+        # mask for objects and wedges
+        is_obj = tf.where(tf.logical_and(objects != -1,tf.logical_or(types == 1,types == 3)), True, False)
+        is_wedge = tf.where(tf.logical_and(objects != -1,types == 2), True, False)
+        is_obj_or_wedge = tf.logical_or(is_obj, is_wedge)
+        
+        num_rx = path.a.shape[1]
+        num_rx_ant = path.a.shape[2]
+        num_tx = path.a.shape[3]
+        num_tx_ant = path.a.shape[4]
+        max_num_paths = path.a.shape[5]
+        max_depth = objects.shape[0]
+        
+        # convert wedges to objects
+        wedge1 = wedges_2_objects[:,0]
+        wedge2 = wedges_2_objects[:,1]
+        indices = tf.where(is_wedge)
+        updates1 = tf.gather(wedge1, tf.reshape(objects[is_wedge], [-1]))
+        updates2 = tf.gather(wedge2, tf.reshape(objects[is_wedge], [-1]))
+        objects_wedge1 = tf.tensor_scatter_nd_update(objects, indices, updates1)
+        objects_wedge2 = tf.tensor_scatter_nd_update(objects, indices, updates2)
+        
+        masks = []
+        for name in self.target_names:
+            idx = obj_names[name]
+            # mask which paths interact with the target and the paths
+            # [max_depth,num_targets,num_sources,max_num_paths]
+            obj1_mask = tf.where(tf.logical_and(objects_wedge1==idx,is_obj_or_wedge), True, False)
+            obj2_mask = tf.where(tf.logical_and(objects_wedge2==idx,is_obj_or_wedge), True, False)
+            obj_mask = tf.logical_or(obj1_mask,obj2_mask)
+            
+            # [max_depth,num_targets,num_sources,max_num_paths,1]
+            mask_paths = tf.expand_dims(obj_mask, axis=-1)
+            # [max_depth,num_targets,num_sources,max_num_paths,1]
+            mask = tf.logical_and(mask_tg_sr, mask_paths)
+            if mask.shape[1] != num_rx*num_rx_ant:
+                # consider cross / VH polarization
+                mask = tf.repeat(mask, repeats=int(num_rx*num_rx_ant/mask.shape[1]), axis=1)
+            if mask.shape[2] != num_tx*num_tx_ant:
+                # consider cross / VH polarization
+                mask = tf.repeat(mask, repeats=int(num_tx*num_tx_ant/mask.shape[2]), axis=2)
+            # [max_depth,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
+            mask = tf.reshape(mask, [max_depth, num_rx,num_rx_ant, num_tx,num_tx_ant, max_num_paths, 1])
+            # [1,num_rx,num_rx_ant,num_tx,num_tx_ant,max_num_paths,1]
+            mask = tf.reduce_any(mask, axis=0, keepdims=True)
+            if singleBS:
+                # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,num_tx]
+                mask = tf.transpose(mask,perm=[0,2,4,5,6,1,3])
+                # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx]
+                mask = tf.linalg.diag_part(mask)
+                # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
+                mask = tf.expand_dims(mask, axis=-1)
+                # [1,num_rx_ant,num_tx_ant,max_num_paths,1,num_rx,1]
+                mask = tf.transpose(mask,perm=[0,5,1,6,2,3,4])
+            masks.append(mask)
+        return masks
+    
     @property
     def target_names(self):
         return self._target_names
@@ -2357,22 +2446,26 @@ class Target:
         self.rotate = rotate
 
 
-def load_sensing_scene(filename,targets,dtype=tf.complex64):
+def load_sensing_scene(filename,targets,empty=False,dtype=tf.complex64):
     root = ET.parse(filename).getroot()
+    if empty:
+        for shape in root.findall('shape'):
+            root.remove(shape)
     if isinstance(targets, list):
         if  not all(isinstance(x, Target) for x in targets):
             raise ValueError('targets must be a list of class Target')
         for target in targets:
             xml = target_to_xml(target)
-            xml = ET.fromstring(xml)
             root.append(xml)
     elif isinstance(targets, Target):
         xml = target_to_xml(targets)
-        xml = ET.fromstring(xml)
         root.append(xml)
     else:
         raise ValueError('targets must be a list of class Target or class Target')
-    new_filename = filename.replace('.xml','_tmp.xml')
+    if empty:
+        new_filename = filename.replace('.xml','_empty.xml')
+    else:
+        new_filename = filename.replace('.xml','_tmp.xml')
     with open(new_filename, 'wb') as f:
         f.write(ET.tostring(root))
     return load_scene(new_filename,dtype)
@@ -2403,4 +2496,4 @@ def target_to_xml(target:Target):
         <translate x="{target.translate[0]}" y="{target.translate[1]}" z="{target.translate[2]}"/>
     </transform>
     </shape>"""
-    return xml
+    return ET.fromstring(xml)

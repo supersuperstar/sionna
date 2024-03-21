@@ -62,7 +62,7 @@ class DQNnet(tf.keras.Model):
         return self.out(x)
 
 class DQN():
-    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None):
+    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None,best_action=False):
         self.num_feature = num_feature
         self.num_action = num_action
         self.lr = learning_rate
@@ -78,6 +78,7 @@ class DQN():
         self.learn_step_counter = 0
         self.cost_his = []
         self.mean_loss = 99999
+        self.best_action = best_action
         
         self.eval_net = DQNnet(self.num_action)
         self.target_net = DQNnet(self.num_action,False)
@@ -94,22 +95,21 @@ class DQN():
         self.memory[index, :] = transition
         self.memory_counter += 1
     
-    def choose_action(self, observation, best=True):
+    def choose_action(self, observation):
         observation = observation[np.newaxis, :]
         if np.random.uniform() < self.epsilon:
             actions_value = self.eval_net(observation)
             action = np.argmax(actions_value)
         else:
             best_action = np.random.randint(0, self.num_action)
-            if best:
-                best_mse = 9999999
+            if self.best_action:
+                best_reward = -2
                 for action in range(self.num_action):
-                    range_true = np.linalg.norm(env.BS_pos[action,:] - env.pos_now)
-                    range_est = env._music_range(env.h_freq-env.h_env,action,env.frequencies,**env.music_params)
-                    mse = np.abs(range_true-range_est)
-                    if mse < best_mse:
-                        best_mse = mse
-                        best_action = action
+                    if env.los[action]:
+                        reward = env._get_reward(action)
+                        if reward > best_reward:
+                            best_reward = reward
+                            best_action = action
             action = best_action
         return action
 
@@ -178,9 +178,9 @@ class Environment():
         # 目标移动范围参数---------------------------------------------------------
         if MOVE_STRATEGY == 'graph':
             # end_points: [num1,3] float,指定的起点/终点
-            self.end_points = kwargs.get('end_points',np.array([[172,-98,0],[0,-180,0],[0,180,0],[-180,0,0]]))
+            self.end_points = kwargs.get('end_points',np.array([[172,-98,0.05],[0,-180,0.05],[0,180,0.05],[-180,0,0.05]]))
             # points: [num2,3] float,指定的移动点
-            self.points = kwargs.get('points',np.array([[0,0,0],[0,-98,0]]))
+            self.points = kwargs.get('points',np.array([[0,0,0.05],[0,-98,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
             self.point_bias = kwargs.get('point_bias',15)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
@@ -195,7 +195,7 @@ class Environment():
         self.target_name = kwargs.get('target_name','car')
         self.target_path = kwargs.get('target_path','meshes/car.ply')
         self.target_material = kwargs.get('target_material','itu_metal')
-        self.target_size = kwargs.get('target_material',2.0) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
+        self.target_size = kwargs.get('target_size',2.0) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         # 天线配置参数 ---------------------------------------------------------
         self.tx_params = {
             "num_rows": kwargs.get('num_tx_rows',1),
@@ -223,8 +223,8 @@ class Environment():
             "max_depth": kwargs.get('max_depth',1),
             "method": kwargs.get('method','fibonacci'),
             "num_samples": kwargs.get('num_samples',int(1e6 * self.BS_num)),
-            "los": kwargs.get('los',False),
-            "reflection": kwargs.get('reflection',False),
+            "los": kwargs.get('los',True),
+            "reflection": kwargs.get('reflection',True),
             "diffraction": kwargs.get('diffraction',True),
             "scattering": kwargs.get('scattering',True),
             "scat_keep_prob": kwargs.get('scat_keep_prob',0.01),
@@ -260,11 +260,11 @@ class Environment():
         # (针对距离估计，特征为不同子载波上的信道信息)num_BS * num_BS * num_subcarrier * (real+img) + pos_now + velocity_now
         self.n_features = self.h_env.shape[1]**2 * self.h_env.shape[6] * 2 + 6
         
-    def mk_sionna_env(self,tg=None,tgname=None,tgv=None):
+    def mk_sionna_env(self,tg=None,tgname=None,tgv=None,empty=False,test=False):
         if tg is None:
             scene = load_scene(self.env_path)
         else:
-            scene = load_sensing_scene(self.env_path,tg)
+            scene = load_sensing_scene(self.env_path,tg,empty=empty)
         #配置天线阵列------------------------------------------------
         scene.tx_array = PlanarArray(**self.tx_params)
         scene.rx_array = PlanarArray(**self.rx_params)
@@ -272,16 +272,17 @@ class Environment():
         scene.synthetic_array = self.synthetic_array # If set to False, ray tracing will be done per antenna element (slower for large arrays)
         # if self.BS_pos_trainable:
         #     self.BS_pos = [tf.Variable(pos) for pos in self.BS_pos]
+        # 添加目标接收端用于辅助估计----------------------------------
+        if test:
+            rx = Receiver(name='rx-target',position = self.pos_now)
+            scene.add(rx)
         for idx in range(self.BS_num):
             pos = self.BS_pos[idx]
             tx = Transmitter(name=f'tx{idx}',position=pos)
             rx = Receiver(name=f'rx{idx}',position=pos)
-            if scene.get(f'tx{idx}') is not None:
-                scene.remove(f'tx{idx}')
             scene.add(tx)
-            if scene.get(f'rx{idx}') is not None:
-                scene.remove(f'rx{idx}')
             scene.add(rx)
+        
         #配置场景材质属性--------------------------------------------
         p1 = LambertianPattern()
         p2 = DirectivePattern(20)
@@ -307,14 +308,20 @@ class Environment():
         return scene
     
     def get_observation(self):
-        paths = self.scene.compute_paths(**self.ray_tracing_params)
-        paths.normalize_delays = False
-        self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(paths)
-        paths.apply_doppler(**self.doppler_params)
-        a,tau = paths.cir()
+        # 判断基站和目标之间是否是视距
+        self.scene = self.mk_sionna_env(test=True)
+        self.paths = self.scene.compute_paths(**self.ray_tracing_params)
+        self.los = self._is_los()
+        # 创建感知场景
+        target = Target(self.target_path, self.target_material, translate=self.pos_now)
+        self.scene = self.mk_sionna_env(tg=target,tgname=[self.target_name],tgv=[self.velocity_now],empty=True)
+        self.paths = self.scene.compute_paths(**self.ray_tracing_params)
+        self.paths.normalize_delays = False
+        self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(self.paths)
+        self.paths.apply_doppler(**self.doppler_params)
+        a,tau = self.paths.cir()
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
         observation = self._normalize_h(self.h_freq)
-        del paths
         return tf.concat([observation,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0)
     
     def reset(self):
@@ -373,9 +380,7 @@ class Environment():
     
     def step(self, action):
         # reward------------------------------------------------------------------------------------
-        self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
-        self.range_est = self._music_range(self.h_freq-self.h_env,action,self.frequencies,**self.music_params) 
-        self.reward = self._get_reward(self.range_true,self.range_est)
+        self.reward = self._get_reward(action)
         self.step_count = self.step_count + 1
         # 目标移动-----------------------------------------------------------------------------------
         move_length = np.linalg.norm(self.velocity_now * TIME_SLOT)
@@ -453,20 +458,55 @@ class Environment():
             print("can't estimate!")
             return 0
 
-    def _get_reward(self,true_value,est_value):
+    def _get_reward(self,action,method='mse'):
         # 如果估计值和真实值的相差在真实值的10%以内，那么依据误差大小奖励在0.5~1之间
         # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0~0.5之间
         # 否则，惩罚值在-1~0之间
-        diff = np.abs(true_value-est_value)
-        diff = diff - self.target_size
-        if diff < 0 :
-            diff = 0
-        if diff <= true_value*0.1:
-            return 0.5 + 0.5*(1-diff/(true_value*0.1))
-        elif diff <= true_value*0.2:
-            return 0.5*(1-diff/(true_value*0.2))
+        if method == 'mse':
+            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
+            if self.los[action]:
+                self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
+                diff = np.abs(self.range_true-self.range_est)
+                diff = diff - self.target_size
+                if diff < 0 :
+                    diff = 0
+                if diff <= self.range_true*0.1:
+                    return 0.5 + 0.5*(1-diff/(self.range_true*0.1))
+                elif diff <= self.range_true*0.2:
+                    return 0.5*(1-diff/(self.range_true*0.2))
+                else:
+                    return -(diff/self.range_true)
+            else:
+                self.range_est = 0
+                return -1
         else:
-            return -(diff/true_value)
+            return 1
+    
+    def _is_los(self):
+        # [batch_size,max_num_paths]
+        types = self.paths.types
+        types = types[0,:]
+        types = tf.squeeze(types)
+        # [max_num_paths]
+        los = tf.where(types == 0, True, False)
+        los = tf.expand_dims(los, axis=-1)
+        # los = tf.repeat(los, self.BS_num, axis=-1)
+        # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths] 
+        masks = self.paths.mask
+        if self.synthetic_array:
+            masks = tf.transpose(masks, perm=[0,3,1,2])
+            masks = masks[0,:,0,:]
+        else:
+            masks = tf.transpose(masks, perm=[0,5,2,4,1,3])
+            masks = masks[0,:,:,:,0,:]
+            masks = tf.reduce_any(masks, axis=2)
+            masks = tf.reduce_any(masks, axis=3)
+        masks = tf.squeeze(masks)
+        # masks: [max_num_paths, num_tx]
+        los = tf.logical_and(los, masks)
+        los = tf.reduce_any(los, axis=0)
+        return los.numpy()
+            
     
 def run():
     step = 0
@@ -477,7 +517,7 @@ def run():
         while True:
             action = RL.choose_action(observation)
             observation_, reward, done = env.step(action)
-            print(f"\r【{step}-{inner_step}th step】pos:{env.pos_now},velocity:{env.velocity_now},BS:{action},reward:{env.reward:.2f},Trange:{env.range_true:.2f},Erange:{env.range_est:.2f}")
+            print(f"\r【{step}-{inner_step}th step】pos:{env.pos_now},BS:{action},reward:{env.reward:.2f},eval_error:{env.range_true-env.range_est:.2f}")
             RL.store_transition(observation, action, reward, observation_)
             if (step >= 200) and (step % 5 == 0):
                 RL.learn()
@@ -491,7 +531,7 @@ if __name__ == "__main__":
     np.set_printoptions(precision=1)
     env = Environment()
     model_save_path = f'./models/street/{env.n_features}-{env.action_space}'
-    RL = DQN(env.n_features,env.action_space)
+    RL = DQN(env.n_features,env.action_space,best_action=True)
     
     run()
 
