@@ -62,7 +62,7 @@ class DQNnet(tf.keras.Model):
         return self.out(x)
 
 class DQN():
-    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None,best_action=False):
+    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None,best_action=False,best_prob=0.6):
         self.num_feature = num_feature
         self.num_action = num_action
         self.lr = learning_rate
@@ -79,6 +79,7 @@ class DQN():
         self.cost_his = []
         self.mean_loss = 99999
         self.best_action = best_action
+        self.best_prob = best_prob
         
         self.eval_net = DQNnet(self.num_action)
         self.target_net = DQNnet(self.num_action,False)
@@ -102,8 +103,8 @@ class DQN():
             action = np.argmax(actions_value)
         else:
             best_action = np.random.randint(0, self.num_action)
-            if self.best_action:
-                best_reward = -2
+            if self.best_action and np.random.rand() < self.best_prob:
+                best_reward = -1
                 for action in range(self.num_action):
                     if env.los[action]:
                         reward = env._get_reward(action)
@@ -258,7 +259,11 @@ class Environment():
         del paths,a,tau
         # 特征数量 ---------------------------------------------------------
         # (针对距离估计，特征为不同子载波上的信道信息)num_BS * num_BS * num_subcarrier * (real+img) + pos_now + velocity_now
-        self.n_features = self.h_env.shape[1]**2 * self.h_env.shape[6] * 2 + 6
+        self.feature_with_target = kwargs.get('feature_with_target',False)
+        if self.feature_with_target:
+            self.n_features = self.h_env.shape[1]**2 * self.h_env.shape[6] * 2 + 6
+        else:
+            self.n_features = self.h_env.shape[1]**2 * self.h_env.shape[6] * 2
         
     def mk_sionna_env(self,tg=None,tgname=None,tgv=None,empty=False,test=False):
         if tg is None:
@@ -322,7 +327,9 @@ class Environment():
         a,tau = self.paths.cir()
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
         observation = self._normalize_h(self.h_freq)
-        return tf.concat([observation,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0)
+        if self.feature_with_target:
+            return tf.concat([observation,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0)
+        return observation
     
     def reset(self):
         self.next_end = False # 用于标记一轮模拟结束
@@ -459,8 +466,7 @@ class Environment():
             return 0
 
     def _get_reward(self,action,method='mse'):
-        # 如果估计值和真实值的相差在真实值的10%以内，那么依据误差大小奖励在0.5~1之间
-        # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0~0.5之间
+        # 如果估计值和真实值的相差在真实值的5%以内，那么依据误差大小奖励在0~1之间
         # 否则，惩罚值在-1~0之间
         if method == 'mse':
             self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
@@ -470,10 +476,8 @@ class Environment():
                 diff = diff - self.target_size
                 if diff < 0 :
                     diff = 0
-                if diff <= self.range_true*0.1:
-                    return 0.5 + 0.5*(1-diff/(self.range_true*0.1))
-                elif diff <= self.range_true*0.2:
-                    return 0.5*(1-diff/(self.range_true*0.2))
+                if diff <= self.range_true*0.05:
+                    return (1-diff/(self.range_true*0.05))
                 else:
                     return -(diff/self.range_true)
             else:
@@ -517,7 +521,7 @@ def run():
         while True:
             action = RL.choose_action(observation)
             observation_, reward, done = env.step(action)
-            print(f"\r【{step}-{inner_step}th step】pos:{env.pos_now},BS:{action},reward:{env.reward:.2f},eval_error:{env.range_true-env.range_est:.2f}")
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{action}\treward:{env.reward:.4f}\terror:{np.abs((env.range_true-env.range_est)*100/env.range_true):.2f}%")
             RL.store_transition(observation, action, reward, observation_)
             if (step >= 200) and (step % 5 == 0):
                 RL.learn()
@@ -531,7 +535,7 @@ if __name__ == "__main__":
     np.set_printoptions(precision=1)
     env = Environment()
     model_save_path = f'./models/street/{env.n_features}-{env.action_space}'
-    RL = DQN(env.n_features,env.action_space,best_action=True)
+    RL = DQN(env.n_features,env.action_space,best_action=False)
     
     run()
 
