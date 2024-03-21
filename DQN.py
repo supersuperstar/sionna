@@ -2,16 +2,16 @@ import os
 import time
 import tensorflow as tf
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import sionna
 from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
 from mysionna.rt.scattering_pattern import *
 from mysionna.rt.scene import Target,load_sensing_scene
+tf.random.set_seed(1) # Set global random seed for reproducibility
 
 model_save_path = './models/street/' # 模型保存路径
-DAS = 100 # Default Area Size,默认目标活动区域范围（100m）
+DAS = 200 # Default Area Size,默认目标活动区域范围（200m）
 VCRT = 0.05 # Velocity Change Rate,速度变化概率 m/s
 VCS = 4 # Velocity Change Size,速度变化大小，即一次最多变化多少 m/s
 VCRG = 22.2 # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
@@ -23,6 +23,7 @@ TIME_SLOT = 0.5 # 时间间隔 s
 #       points: [num2,3] float,指定的移动点
 #       point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
 #       point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
+#       DAS:限制移动范围
 MOVE_STRATEGY = 'graph' 
 
 class CNN(tf.keras.Model):
@@ -61,7 +62,7 @@ class DQNnet(tf.keras.Model):
         return self.out(x)
 
 class DQN():
-    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.2,replace_target_iter=100, memory_size=1000, batch_size=32,path=None):
+    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None):
         self.num_feature = num_feature
         self.num_action = num_action
         self.lr = learning_rate
@@ -93,21 +94,22 @@ class DQN():
         self.memory[index, :] = transition
         self.memory_counter += 1
     
-    def choose_action(self, observation):
+    def choose_action(self, observation, best=True):
         observation = observation[np.newaxis, :]
         if np.random.uniform() < self.epsilon:
             actions_value = self.eval_net(observation)
-            action = np.argmin(actions_value)
+            action = np.argmax(actions_value)
         else:
             best_action = np.random.randint(0, self.num_action)
-            best_mse = 9999999
-            for action in range(self.num_action):
-                range_true = np.linalg.norm(env.BS_pos[action:] - env.pos_now)
-                range_est = env._music_range(env.h_freq-env.h_env,action,env.frequencies,**env.music_params)
-                mse = np.abs(range_true-range_est)
-                if mse < best_mse:
-                    best_mse = mse
-                    best_action = action
+            if best:
+                best_mse = 9999999
+                for action in range(self.num_action):
+                    range_true = np.linalg.norm(env.BS_pos[action,:] - env.pos_now)
+                    range_est = env._music_range(env.h_freq-env.h_env,action,env.frequencies,**env.music_params)
+                    mse = np.abs(range_true-range_est)
+                    if mse < best_mse:
+                        best_mse = mse
+                        best_action = action
             action = best_action
         return action
 
@@ -129,7 +131,7 @@ class DQN():
         batch_index = np.arange(self.batch_size, dtype=np.int32)
         action = batch_memory[:, self.num_feature].astype(int)
         reward = batch_memory[:, self.num_feature+1]
-        q_target[batch_index, action] = reward + self.gamma * tf.reduce_min(q_next, axis=1)
+        q_target[batch_index, action] = reward + self.gamma * tf.reduce_max(q_next, axis=1)
         
         # train
         self.cost = self.eval_net.train_on_batch(batch_memory[:, :self.num_feature], q_target)
@@ -147,7 +149,7 @@ class DQN():
                 self.mean_loss = new_mean_loss
             if not os.path.exists(model_save_path):
                 os.makedirs(model_save_path)
-            self.save_model(model_save_path,self.mean_loss)
+            self.save_model(model_save_path)
             print(f"model saved, mean loss: {self.mean_loss}")
     
     def plot_cost(self):
@@ -156,27 +158,32 @@ class DQN():
         plt.xlabel('training steps')
         plt.show()
     
-    def save_model(self,loss,path):
+    def save_model(self,path):
         #time: Month-Day-Hour-Minute
         precent = time.strftime('%m-%d-%H-%M',time.localtime(time.time()))
-        self.eval_net.save(f"{path}/eval_{loss:.5f}_{precent}.h5")
-        self.target_net.save(f"{path}/target_{loss:.5f}_{precent}.h5")
+        self.eval_net.save_weights(f"{path}/eval_{precent}.h5")
+        self.target_net.save_weights(f"{path}/target_{precent}.h5")
         
 class Environment():
     def __init__(self,**kwargs):
         self.scene = None
-        self.action_space = kwargs.get('action_space',6)
-        # 基站参数---------------------------------------------------------
-        self.BS_num = self.action_space
-        self.BS_pos = kwargs.get('BS_pos',np.array([[32.8,0,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-88.4,45.3],[108.6,-121.1,24.9]]))
+        # 环境路径
         self.env_path = kwargs.get('env_path','./scenes/Street/street.xml')
+        # 基站参数---------------------------------------------------------
+        # 基站个数
+        self.action_space = kwargs.get('action_space',6)
+        self.BS_num = self.action_space 
+        # 基站位置，要与个数对应
+        self.BS_pos = kwargs.get('BS_pos',np.array([[32.8,0,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-88.4,45.3],[108.6,-121.1,24.9]]))
         # 目标移动范围参数---------------------------------------------------------
-        if MOVE_STRATEGY == 'random': 
-            self.target_move_area = kwargs.get('move_area',np.array([[DAS,DAS],[DAS,-DAS],[-DAS,-DAS],[-DAS,DAS]]))
-        elif MOVE_STRATEGY == 'graph':
+        if MOVE_STRATEGY == 'graph':
+            # end_points: [num1,3] float,指定的起点/终点
             self.end_points = kwargs.get('end_points',np.array([[172,-98,0],[0,-180,0],[0,180,0],[-180,0,0]]))
+            # points: [num2,3] float,指定的移动点
             self.points = kwargs.get('points',np.array([[0,0,0],[0,-98,0]]))
+            # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
             self.point_bias = kwargs.get('point_bias',15)
+            # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
             self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,0,1],[0,0,0,0,0,1],[0,0,0,0,1,0],[0,0,0,0,1,0],[0,0,1,1,0,1],[1,1,0,0,1,0]]))
             self.num_points = len(self.points)
             self.num_end_points = len(self.end_points)
@@ -188,6 +195,7 @@ class Environment():
         self.target_name = kwargs.get('target_name','car')
         self.target_path = kwargs.get('target_path','meshes/car.ply')
         self.target_material = kwargs.get('target_material','itu_metal')
+        self.target_size = kwargs.get('target_material',2.0) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         # 天线配置参数 ---------------------------------------------------------
         self.tx_params = {
             "num_rows": kwargs.get('num_tx_rows',1),
@@ -214,30 +222,31 @@ class Environment():
         self.ray_tracing_params = {
             "max_depth": kwargs.get('max_depth',1),
             "method": kwargs.get('method','fibonacci'),
-            "num_samples": kwargs.get('num_samples',int(1e5 * self.BS_num)),
-            "los": kwargs.get('los',True),
-            "reflection": kwargs.get('reflection',True),
+            "num_samples": kwargs.get('num_samples',int(1e6 * self.BS_num)),
+            "los": kwargs.get('los',False),
+            "reflection": kwargs.get('reflection',False),
             "diffraction": kwargs.get('diffraction',True),
             "scattering": kwargs.get('scattering',True),
             "scat_keep_prob": kwargs.get('scat_keep_prob',0.01),
-            "edge_diffraction": kwargs.get('edge_diffraction',False),
+            "edge_diffraction": kwargs.get('edge_diffraction',True),
             "check_scene": kwargs.get('check_scene',True),
             "scat_random_phases": kwargs.get('scat_random_phases',False)
         }
+        # 频域信道参数 ---------------------------------------------------------
+        self.subcarrier_spacing = kwargs.get('subcarrier_spacing',15e3)
+        self.subcarrier_num = kwargs.get('subcarrier_num',32)
+        self.frequencies = subcarrier_frequencies(self.subcarrier_num, self.subcarrier_spacing)
         # 多普勒参数 ---------------------------------------------------------
         self.doppler_params = {
-            "sampling_frequency": kwargs.get('subcarrier_spacing',15e3),
+            "sampling_frequency": self.subcarrier_spacing,
             "num_time_steps": kwargs.get('num_time_steps',14),
             "target_velocities": kwargs.get('target_velocity',None)
         }
-        # 频域信道参数 ---------------------------------------------------------
-        self.subcarrier_num = kwargs.get('subcarrier_num',32)
-        self.frequencies = subcarrier_frequencies(self.subcarrier_num, self.doppler_params["sampling_frequency"])
         # MUSIC估计参数 ---------------------------------------------------------
         self.music_params = {
             "start": kwargs.get('start',0),
-            "end": kwargs.get('end',1000),
-            "step": kwargs.get('step',0.2)
+            "end": kwargs.get('end',2000),
+            "step": kwargs.get('step',0.5)
         } 
         # 初始化环境 ---------------------------------------------------------
         self.scene = self.mk_sionna_env()
@@ -245,11 +254,11 @@ class Environment():
         paths.normalize_delays = False
         paths.apply_doppler(**self.doppler_params)
         a,tau = paths.cir()
-        self.h_env = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=False)
+        self.h_env = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
+        del paths,a,tau
         # 特征数量 ---------------------------------------------------------
-        # num_BS * tx_num * rx_num * num_subcarrier * num_time_steps * (real+img) + pos_now + velocity_now
-        self.n_features = self.h_env.shape[1] * self.h_env.shape[6] * 2 + 6
-        self.h_env,_ = self._normalize_h(self.h_env)
+        # (针对距离估计，特征为不同子载波上的信道信息)num_BS * num_BS * num_subcarrier * (real+img) + pos_now + velocity_now
+        self.n_features = self.h_env.shape[1]**2 * self.h_env.shape[6] * 2 + 6
         
     def mk_sionna_env(self,tg=None,tgname=None,tgv=None):
         if tg is None:
@@ -261,8 +270,8 @@ class Environment():
         scene.rx_array = PlanarArray(**self.rx_params)
         scene.frequency = self.frequncy # in Hz; implicitly updates RadioMaterials
         scene.synthetic_array = self.synthetic_array # If set to False, ray tracing will be done per antenna element (slower for large arrays)
-        if self.BS_pos_trainable:
-            self.BS_pos = [tf.Variable(pos) for pos in self.BS_pos]
+        # if self.BS_pos_trainable:
+        #     self.BS_pos = [tf.Variable(pos) for pos in self.BS_pos]
         for idx in range(self.BS_num):
             pos = self.BS_pos[idx]
             tx = Transmitter(name=f'tx{idx}',position=pos)
@@ -300,11 +309,11 @@ class Environment():
     def get_observation(self):
         paths = self.scene.compute_paths(**self.ray_tracing_params)
         paths.normalize_delays = False
-        self.doppler_params["target_velocities"],obj_name = self.scene.compute_target_velocities(paths,True)
+        self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(paths)
         paths.apply_doppler(**self.doppler_params)
         a,tau = paths.cir()
-        self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=False)
-        self.h_freq,observation = self._normalize_h(self.h_freq)
+        self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
+        observation = self._normalize_h(self.h_freq)
         del paths
         return tf.concat([observation,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0)
     
@@ -364,9 +373,9 @@ class Environment():
     
     def step(self, action):
         # reward------------------------------------------------------------------------------------
-        range_true = np.linalg.norm(self.BS_pos[action:] - self.pos_now)
-        range_est = self._music_range(self.h_freq-self.h_env,action,self.frequencies,**self.music_params) 
-        self.reward = self._get_reward(range_true,range_est)
+        self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
+        self.range_est = self._music_range(self.h_freq-self.h_env,action,self.frequencies,**self.music_params) 
+        self.reward = self._get_reward(self.range_true,self.range_est)
         self.step_count = self.step_count + 1
         # 目标移动-----------------------------------------------------------------------------------
         move_length = np.linalg.norm(self.velocity_now * TIME_SLOT)
@@ -381,42 +390,40 @@ class Environment():
                 self.velocity_now = pos_dis/(np.linalg.norm(pos_dis)) * np.linalg.norm(self.velocity_now)# 变更速度方向
         else:
             self.pos_now = self.pos_now + self.velocity_now * TIME_SLOT
+        # 超出边界
+        if self.pos_now[0]>=DAS or self.pos_now[0]<=-DAS or self.pos_now[1]>=DAS or self.pos_now[1]<=-DAS:
+            self.done=True
         # 速度随机变化-----------------------------------------------------------------------------------
         if np.random.rand() < VCRT:
             self.velocity_now = self.velocity_now * (((np.random.rand()*2-1)*VCS + np.linalg.norm(self.velocity_now))/np.linalg.norm(self.velocity_now))
         # 下一次state-----------------------------------------------------------------------------------
         tg = Target(self.target_path, self.target_material, translate=self.pos_now)
         self.scene = self.mk_sionna_env(tg=tg,tgname=[self.target_name],tgv=[self.velocity_now])
-        self.state_ = self.get_observation()            
-        return self.state_, self.reward, self.done
+        self.next_observation = self.get_observation()            
+        return self.next_observation, self.reward, self.done
     
     def _normalize_h(self,h):
         # h:[batch size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, fft_size]
-        # 去对角线，然后展开并分为实部和虚部
-        h = tf.transpose(h,perm=[0,2,4,5,6,1,3])
-        h = tf.linalg.diag_part(h)
-        # h:[batch size, num_tx, num_tx_ant, num_rx_ant, num_time_steps, fft_size]
-        h = tf.transpose(h,perm=[0,5,1,2,3,4])
-        # h:[batch size, num_tx, fft_size]
-        h = h[0,:,0,0,0,:]
+        # h:[num_rx,num_tx,fft_size]
+        h = h[0,:,0,:,0,0,:]
         h_flatten = tf.reshape(h,[-1])
         h_real = tf.math.real(h_flatten)
         h_img = tf.math.imag(h_flatten)
-        h_real = h_real * 1e5
-        h_img = h_img * 1e5
+        # h_real = h_real * 1e5
+        # h_img = h_img * 1e5
         h_flatten = tf.concat([h_real,h_img],axis=0)
-        return h,h_flatten
+        return h_flatten
 
-    def _music_range(self,h_freq,BS_id,frequencies,start = 0,end = 1000,step = 0.2):
+    def _music_range(self,h_freq,BS_id,frequencies,start = 0,end = 2000,step = 0.2):
         try:
-            y_i = h_freq[BS_id,:]
+            y_i = h_freq[0,BS_id,0,BS_id,0,0,:]
             y_i = tf.squeeze(y_i)
             y_i = tf.expand_dims(y_i, axis=0)
             y_i_H = tf.transpose(tf.math.conj(y_i))
             y_conv = tf.matmul(y_i_H, y_i)
             _, eig_vecs = tf.linalg.eigh(y_conv)
             tau_range = np.arange(start,end, step)
-            G_n = tf.cast(eig_vecs[:,:-4], dtype=tf.complex64)
+            G_n = tf.cast(eig_vecs[:,:-1], dtype=tf.complex64)
             G_n_H = tf.math.conj(tf.transpose(G_n))
             frequencies_c = tf.expand_dims(frequencies, axis=0)
             frequencies_c = tf.repeat(frequencies_c, len(tau_range), axis=0)
@@ -437,42 +444,45 @@ class Environment():
             P_tau_real = tf.math.real(P)
             P_tau_imag = tf.math.imag(P)
             P_abs = tf.math.sqrt(P_tau_real**2 + P_tau_imag**2)
-            P_norm = 10 * tf.math.log(P_abs / tf.reduce_max(P_abs), 10)
-            P_norm = tf.squeeze(P_norm)
-            max_idx = tf.argmax(P_norm)
-            tau_est = (start + int(max_idx) * step)
-            return tau_est*0.15
+            # P_norm = 10 * tf.math.log(P_abs / tf.reduce_max(P_abs), 10)
+            # P_norm = tf.squeeze(P_norm)
+            max_idx = tf.argmax(P_abs)
+            range_est = (start + int(max_idx) * step)*0.15
+            return range_est
         except:
+            print("can't estimate!")
             return 0
 
     def _get_reward(self,true_value,est_value):
         # 如果估计值和真实值的相差在真实值的10%以内，那么依据误差大小奖励在0.5~1之间
-        # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0.1~0.5之间
+        # 如果估计值和真实值的相差在真实值的10%~20%，那么依据误差大小奖励在0~0.5之间
         # 否则，惩罚值在-1~0之间
         diff = np.abs(true_value-est_value)
+        diff = diff - self.target_size
+        if diff < 0 :
+            diff = 0
         if diff <= true_value*0.1:
-            return 0.5 + 0.5*(1-diff/(true_value*0.01))
+            return 0.5 + 0.5*(1-diff/(true_value*0.1))
         elif diff <= true_value*0.2:
-            return 0.5*(1-diff/(true_value*0.05))
+            return 0.5*(1-diff/(true_value*0.2))
         else:
             return -(diff/true_value)
     
 def run():
     step = 0
-    for episode in range(3000):
+    for episode in range(300):
         print(f"====={episode}th episode start=====")
         observation = env.reset()
         inner_step = 0
         while True:
             action = RL.choose_action(observation)
-            print(f"\r【{step}-{inner_step}th step】pos:{env.pos_now},velocity:{env.velocity_now},BS:{action},reward:{env.reward}")
             observation_, reward, done = env.step(action)
+            print(f"\r【{step}-{inner_step}th step】pos:{env.pos_now},velocity:{env.velocity_now},BS:{action},reward:{env.reward:.2f},Trange:{env.range_true:.2f},Erange:{env.range_est:.2f}")
             RL.store_transition(observation, action, reward, observation_)
-            if (step >= 32) and (step % 5 == 0):
+            if (step >= 200) and (step % 5 == 0):
                 RL.learn()
             observation = observation_
             if done:
-                # print(f"====={episode}th episode done=====")
                 break
             step += 1
             inner_step += 1
@@ -480,7 +490,7 @@ def run():
 if __name__ == "__main__":
     np.set_printoptions(precision=1)
     env = Environment()
-    model_save_path = f'./models/street/{env.n_features}-{env.action_space}/'
+    model_save_path = f'./models/street/{env.n_features}-{env.action_space}'
     RL = DQN(env.n_features,env.action_space)
     
     run()
