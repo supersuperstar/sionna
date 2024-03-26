@@ -26,15 +26,15 @@ TIME_SLOT = 0.5 # 时间间隔 s
 #       DAS:限制移动范围
 MOVE_STRATEGY = 'graph' 
 
-class CNN(tf.keras.Model):
-    def __init__(self, num_feature):
+class CNNnet(tf.keras.Model):
+    def __init__(self, num_feature, num_action):
         super(CNN, self).__init__()
         self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=8, strides=4, activation='relu')
         self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, activation='relu')
         self.conv3 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
         self.flat = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(units=512, activation='relu')
-        self.out = tf.keras.layers.Dense(units=num_feature)
+        self.dense = tf.keras.layers.Dense(units=num_feature, activation='relu')
+        self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
 
     def call(self, inputs):
         x = self.conv1(inputs)
@@ -44,25 +44,72 @@ class CNN(tf.keras.Model):
         x = self.dense(x)
         return self.out(x)
 
+class CNN():
+    def __init__(self,num_feature,num_action, **kwargs):
+        self.learning_rate = kwargs.get('learning_rate',0.01)
+        self.batch_size = kwargs.get('batch_size',32)
+        self.width = kwargs.get('width',14)
+        self.hight = kwargs.get('hight',32)
+        self.batch_buffer = np.zeros((self.batch_size,self.hight,self.width)) # CSI buffer
+        self.label_buffer = np.zeros((self.batch_size))
+        self._buf_count = 0
+        
+        self.net = CNNnet(num_feature,num_action)
+        self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),metrics=['accuracy'])
+    
+    def store_data(self, data, label):
+        self.batch_buffer[self.buf_count] = np.array(data)
+        self.label_buffer[self.buf_count] = np.array(label)
+        self.buf_count = self.buf_count + 1
+    
+    def learn(self):
+        data = tf.convert_to_tensor(self.batch_buffer)
+        label = tf.convert_to_tensor(self.label_buffer)
+        predict = self.net.train_on_batch(data,label)
+        acc = tf.reduce_mean(tf.cast(tf.equal(tf.argmax(predict,axis=1),label),tf.float32))
+        return acc
+        
+    
+    @property
+    def buf_count(self):
+        return self._buf_count
+    
+    @buf_count.setter
+    def buf_count(self,value):
+        if value >= self.batch_size:
+            self.learn()
+            self._buf_count = 0
+        else:
+            self._buf_count = value
+        
 class DQNnet(tf.keras.Model):
     def __init__(self, num_action,trainable=True):
         super().__init__('mlp_q_network')
         if trainable:
-            self.dense1 = tf.keras.layers.Dense(units=64, activation='relu')
-            self.dense2 = tf.keras.layers.Dense(units=32, activation='relu')
+            self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=8, strides=4, activation='relu')
+            self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, activation='relu')
+            self.conv3 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
+            self.flat = tf.keras.layers.Flatten()
+            self.dense = tf.keras.layers.Dense(units=512, activation='relu')
             self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
         else:
-            self.dense1 = tf.keras.layers.Dense(units=64, activation='relu',trainable=False)
-            self.dense2 = tf.keras.layers.Dense(units=32, activation='relu',trainable=False)
+            self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=8, strides=4, activation='relu',trainable=False)
+            self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, activation='relu',trainable=False)
+            self.conv3 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu',trainable=False)
+            self.flat = tf.keras.layers.Flatten(trainable=False)
+            self.dense = tf.keras.layers.Dense(units=512, activation='relu',trainable=False)
             self.out = tf.keras.layers.Dense(units=num_action,activation='linear',trainable=False)
     def call(self, inputs):
         x = tf.convert_to_tensor(inputs)
-        x = self.dense1(inputs)
-        x = self.dense2(x)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.flat(x)
+        x = self.dense(x)
         return self.out(x)
 
 class DQN():
-    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.5,replace_target_iter=100, memory_size=1000, batch_size=32,path=None,best_action=False,best_prob=0.6):
+    def __init__(self, num_feature, num_action, learning_rate=0.01, reward_decay=0.9, e_greedy=0.2,replace_target_iter=100, memory_size=1000, batch_size=32,path=None,best_action=False,best_prob=0.6):
         self.num_feature = num_feature
         self.num_action = num_action
         self.lr = learning_rate
@@ -97,13 +144,17 @@ class DQN():
         self.memory_counter += 1
     
     def choose_action(self, observation):
+        action_type='R'
         observation = observation[np.newaxis, :]
         if np.random.uniform() < self.epsilon:
             actions_value = self.eval_net(observation)
             action = np.argmax(actions_value)
+            action_type='M'
         else:
             best_action = np.random.randint(0, self.num_action)
+            action_type='R'
             if self.best_action and np.random.rand() < self.best_prob:
+                action_type='B'
                 best_reward = -1
                 for action in range(self.num_action):
                     if env.los[action]:
@@ -112,7 +163,7 @@ class DQN():
                             best_reward = reward
                             best_action = action
             action = best_action
-        return action
+        return action,action_type
 
     def _replace_target_params(self):
         self.target_net.set_weights(self.eval_net.get_weights())
@@ -136,8 +187,8 @@ class DQN():
         
         # train
         self.cost = self.eval_net.train_on_batch(batch_memory[:, :self.num_feature], q_target)
+        self.cost_his.append(np.mean(self.cost))
         
-        self.cost_his.append(self.cost)
         self.epsilon = self.epsilon + self.epsilon_increment if self.epsilon < self.epsilon_max else self.epsilon_max
         self.learn_step_counter += 1
         
@@ -152,18 +203,16 @@ class DQN():
                 os.makedirs(model_save_path)
             self.save_model(model_save_path)
             print(f"model saved, mean loss: {self.mean_loss}")
-    
-    def plot_cost(self):
-        plt.plot(np.arange(len(self.cost_his)), self.cost_his)
-        plt.ylabel('Cost')
-        plt.xlabel('training steps')
-        plt.show()
-    
+        
     def save_model(self,path):
         #time: Month-Day-Hour-Minute
         precent = time.strftime('%m-%d-%H-%M',time.localtime(time.time()))
         self.eval_net.save_weights(f"{path}/eval_{precent}.h5")
         self.target_net.save_weights(f"{path}/target_{precent}.h5")
+        plt.plot(np.arange(len(self.cost_his)), self.cost_his)
+        plt.ylabel('loss')
+        plt.xlabel('training steps')
+        plt.savefig(f'{model_save_path}/loss_{precent}.png')
         
 class Environment():
     def __init__(self,**kwargs):
@@ -175,17 +224,17 @@ class Environment():
         self.action_space = kwargs.get('action_space',6)
         self.BS_num = self.action_space 
         # 基站位置，要与个数对应
-        self.BS_pos = kwargs.get('BS_pos',np.array([[32.8,0,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-88.4,45.3],[108.6,-121.1,24.9]]))
+        self.BS_pos = kwargs.get('BS_pos',np.array([[32.8,35.2,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-78.4,45.3],[141.6,-28.7,24.9]]))
         # 目标移动范围参数---------------------------------------------------------
         if MOVE_STRATEGY == 'graph':
             # end_points: [num1,3] float,指定的起点/终点
-            self.end_points = kwargs.get('end_points',np.array([[172,-98,0.05],[0,-180,0.05],[0,180,0.05],[-180,0,0.05]]))
+            self.end_points = kwargs.get('end_points',np.array([[175,0,0.05],[0,-175,0.05],[0,175,0.05],[-175,0,0.05]]))
             # points: [num2,3] float,指定的移动点
-            self.points = kwargs.get('points',np.array([[0,0,0.05],[0,-98,0.05]]))
+            self.points = kwargs.get('points',np.array([[0,0,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
             self.point_bias = kwargs.get('point_bias',15)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
-            self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,0,1],[0,0,0,0,0,1],[0,0,0,0,1,0],[0,0,0,0,1,0],[0,0,1,1,0,1],[1,1,0,0,1,0]]))
+            self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]]))
             self.num_points = len(self.points)
             self.num_end_points = len(self.end_points)
             num_path = len(self.point_path)
@@ -221,7 +270,7 @@ class Environment():
         self.BS_pos_trainable = kwargs.get('BS_pos_trainable',False)
         # 光线追踪参数 ---------------------------------------------------------
         self.ray_tracing_params = {
-            "max_depth": kwargs.get('max_depth',1),
+            "max_depth": kwargs.get('max_depth',3),
             "method": kwargs.get('method','fibonacci'),
             "num_samples": kwargs.get('num_samples',int(1e6 * self.BS_num)),
             "los": kwargs.get('los',True),
@@ -233,6 +282,7 @@ class Environment():
             "check_scene": kwargs.get('check_scene',True),
             "scat_random_phases": kwargs.get('scat_random_phases',False)
         }
+        self.scat_keep_prob_fixed = self.ray_tracing_params["scat_keep_prob"]
         # 频域信道参数 ---------------------------------------------------------
         self.subcarrier_spacing = kwargs.get('subcarrier_spacing',15e3)
         self.subcarrier_num = kwargs.get('subcarrier_num',32)
@@ -317,10 +367,12 @@ class Environment():
         self.scene = self.mk_sionna_env(test=True)
         self.paths = self.scene.compute_paths(**self.ray_tracing_params)
         self.los = self._is_los()
-        # 创建感知场景
+        # 创建感知场景：只包含目标的场景
         target = Target(self.target_path, self.target_material, translate=self.pos_now)
         self.scene = self.mk_sionna_env(tg=target,tgname=[self.target_name],tgv=[self.velocity_now],empty=True)
+        self.ray_tracing_params["scat_keep_prob"] = 1
         self.paths = self.scene.compute_paths(**self.ray_tracing_params)
+        self.ray_tracing_params["scat_keep_prob"] = self.scat_keep_prob_fixed
         self.paths.normalize_delays = False
         self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(self.paths)
         self.paths.apply_doppler(**self.doppler_params)
@@ -414,16 +466,45 @@ class Environment():
         self.next_observation = self.get_observation()            
         return self.next_observation, self.reward, self.done
     
+    # for CNN
+    def get_data_label(self):
+        # 判断基站和目标之间是否是视距
+        self.scene = self.mk_sionna_env(test=True)
+        self.paths = self.scene.compute_paths(**self.ray_tracing_params)
+        self.los = self._is_los()
+        # 创建感知场景：只包含目标的场景
+        target = Target(self.target_path, self.target_material, translate=self.pos_now)
+        self.scene = self.mk_sionna_env(tg=target,tgname=[self.target_name],tgv=[self.velocity_now],empty=True)
+        self.ray_tracing_params["scat_keep_prob"] = 1
+        self.paths = self.scene.compute_paths(**self.ray_tracing_params)
+        self.ray_tracing_params["scat_keep_prob"] = self.scat_keep_prob_fixed
+        self.paths.normalize_delays = False
+        self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(self.paths)
+        self.paths.apply_doppler(**self.doppler_params)
+        a,tau = self.paths.cir()
+        self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
+        label = 0
+        best_reward = -1
+        for action in range(self.BS_num):
+            reward = self._get_reward(action)
+            if reward > best_reward:
+                best_reward = reward
+                label = action
+        data = self.h_freq[0,:,0,:,0,:,:]
+        data = tf.reshape(data,[-1,self.doppler_params["num_time_steps"],self.subcarrier_num])
+        data = tf.transpose(data,perm=[1,2,0])
+        return data,label
+    
     def _normalize_h(self,h):
-        # h:[batch size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, fft_size]
-        # h:[num_rx,num_tx,fft_size]
-        h = h[0,:,0,:,0,0,:]
-        h_flatten = tf.reshape(h,[-1])
+        # h:[batch size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, subcarrier_num]
+        # h:[num_rx,num_tx,num_time_steps,subcarrier_num]
+        h = h[0,:,0,:,0,:,:]
+        # h:[feature_layers_num,num_time_steps,subcarrier_num]
+        h_flatten = tf.reshape(h,[-1,self.doppler_params["num_time_steps"],self.subcarrier_num])
         h_real = tf.math.real(h_flatten)
         h_img = tf.math.imag(h_flatten)
-        # h_real = h_real * 1e5
-        # h_img = h_img * 1e5
         h_flatten = tf.concat([h_real,h_img],axis=0)
+        h_flatten = tf.transpose(h_flatten,perm=[1,2,0])
         return h_flatten
 
     def _music_range(self,h_freq,BS_id,frequencies,start = 0,end = 2000,step = 0.2):
@@ -464,7 +545,7 @@ class Environment():
         except:
             print("can't estimate!")
             return 0
-
+          
     def _get_reward(self,action,method='mse'):
         # 如果估计值和真实值的相差在真实值的5%以内，那么依据误差大小奖励在0~1之间
         # 否则，惩罚值在-1~0之间
@@ -511,17 +592,35 @@ class Environment():
         los = tf.reduce_any(los, axis=0)
         return los.numpy()
             
-    
 def run():
     step = 0
-    for episode in range(300):
+    for episode in range(3000):
         print(f"====={episode}th episode start=====")
         observation = env.reset()
         inner_step = 0
         while True:
-            action = RL.choose_action(observation)
+            action,action_type = RL.choose_action(observation)
             observation_, reward, done = env.step(action)
-            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{action}\treward:{env.reward:.4f}\terror:{np.abs((env.range_true-env.range_est)*100/env.range_true):.2f}%")
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{action}({action_type})\treward:{env.reward:.4f}\terror:{np.abs((env.range_true-env.range_est)*100/env.range_true):.2f}%\t{env.los}")
+            RL.store_transition(observation, action, reward, observation_)
+            if (step >= 200) and (step % 5 == 0):
+                RL.learn()
+            observation = observation_
+            if done:
+                break
+            step += 1
+            inner_step += 1
+
+def run1():
+    step = 0
+    for episode in range(3000):
+        print(f"====={episode}th episode start=====")
+        observation = env.reset()
+        inner_step = 0
+        while True:
+            action,action_type = RL.choose_action(observation)
+            observation_, reward, done = env.step(action)
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{action}({action_type})\treward:{env.reward:.4f}\terror:{np.abs((env.range_true-env.range_est)*100/env.range_true):.2f}%\t{env.los}")
             RL.store_transition(observation, action, reward, observation_)
             if (step >= 200) and (step % 5 == 0):
                 RL.learn()
@@ -533,9 +632,13 @@ def run():
 
 if __name__ == "__main__":
     np.set_printoptions(precision=1)
+    # end_points = np.array([[0,-170,0.05],[0,170,0.05]])
+    # points = np.array([])
+    # point_path = np.array([[0,1],[1,0]])
     env = Environment()
     model_save_path = f'./models/street/{env.n_features}-{env.action_space}'
-    RL = DQN(env.n_features,env.action_space,best_action=False)
+    RL = DQN(env.n_features,env.action_space,memory_size=5000,best_action=True,best_prob=0.8)
+    # CN = CNN(env.n_features,env.action_space,width = env.doppler_params["num_time_steps"],hight = env.subcarrier_num)
     
     run()
 

@@ -57,10 +57,10 @@
 
 <!-- Shapes -->
 
-	<shape type="ply" id="mesh-b1-itu_concrete" name="mesh-b1-itu_concrete">
-		<string name="filename" value="meshes/b1-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-b1-itu_concret" name="mesh-b1-itu_concret">
+		<string name="filename" value="meshes/b1-itu_concret.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b1-itu_glass" name="mesh-b1-itu_glass">
 		<string name="filename" value="meshes/b1-itu_glass.ply"/>
@@ -72,10 +72,10 @@
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_medium_dry_ground" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-b2-itu_concrete" name="mesh-b2-itu_concrete">
-		<string name="filename" value="meshes/b2-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-b2-itu_concret" name="mesh-b2-itu_concret">
+		<string name="filename" value="meshes/b2-itu_concret.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b2-itu_glass" name="mesh-b2-itu_glass">
 		<string name="filename" value="meshes/b2-itu_glass.ply"/>
@@ -85,17 +85,17 @@
 	<shape type="ply" id="mesh-b3" name="mesh-b3">
 		<string name="filename" value="meshes/b3.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b4" name="mesh-b4">
 		<string name="filename" value="meshes/b4.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
-	<shape type="ply" id="mesh-b5-itu_concrete" name="mesh-b5-itu_concrete">
-		<string name="filename" value="meshes/b5-itu_concrete.ply"/>
+	<shape type="ply" id="mesh-b5-itu_concret" name="mesh-b5-itu_concret">
+		<string name="filename" value="meshes/b5-itu_concret.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b5-itu_glass" name="mesh-b5-itu_glass">
 		<string name="filename" value="meshes/b5-itu_glass.ply"/>
@@ -105,62 +105,62 @@
 	<shape type="ply" id="mesh-b6" name="mesh-b6">
 		<string name="filename" value="meshes/b6.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b7" name="mesh-b7">
 		<string name="filename" value="meshes/b7.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b8" name="mesh-b8">
 		<string name="filename" value="meshes/b8.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b9" name="mesh-b9">
 		<string name="filename" value="meshes/b9.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b10" name="mesh-b10">
 		<string name="filename" value="meshes/b10.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b11" name="mesh-b11">
 		<string name="filename" value="meshes/b11.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b12" name="mesh-b12">
 		<string name="filename" value="meshes/b12.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b13" name="mesh-b13">
 		<string name="filename" value="meshes/b13.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b14" name="mesh-b14">
 		<string name="filename" value="meshes/b14.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b15" name="mesh-b15">
 		<string name="filename" value="meshes/b15.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b16" name="mesh-b16">
 		<string name="filename" value="meshes/b16.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 	<shape type="ply" id="mesh-b17" name="mesh-b17">
 		<string name="filename" value="meshes/b17.ply"/>
 		<boolean name="face_normals" value="true"/>
-		<ref id="mat-itu_concrete" name="bsdf"/>
+		<ref id="mat-itu_concret" name="bsdf"/>
 	</shape>
 
 <!-- Volumes -->
