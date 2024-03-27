@@ -3,8 +3,8 @@
     "subcarrier_num": 64,
     "num_time_steps": 1,
     "ebno_db": 20,
-    "num_samples": 1000000,
-    "batch_size": 1,
+    "num_samples": 100000,
+    "batch_size": 10,
     "max_depth": 1,
     "step": 0.1,
     "los": false,
@@ -12,5 +12,5 @@
     "scattering": true,
     "diffraction": true,
     "edge_diffraction": true,
-    "scat_keep_prob": 0.002
+    "scat_keep_prob": 0.005
 }

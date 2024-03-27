@@ -17,7 +17,6 @@ import numpy as np
 import sionna
 import tqdm
 import json
-import pandas as pd
 from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 # Import Sionna RT components
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
@@ -43,16 +42,16 @@ edge_diffraction = config.get("edge_diffraction")
 
 scene_info = [
     {
-        "scene_name":"indoor", # 场景名称
+        "scene_name":"street", # 场景名称
         "paths":"./scenes/Street/street.xml", # 场景路径
         "tgpath":"meshes/car.ply", # 目标路径
         "tgmat":"itu_metal", # 目标材质
         "tgname":"car", # 目标名称
         "tgv":[0,0,0], # 目标速度
-        "bspos":[[0,0,2.95],[1,0,2.95]],# ,[0,-1,2.95],[-4.9,0,2.7],[4.9,0,2.7]], # 基站位置
-        "map_center":[0,0,0],
-        "map_size_x":10,
-        "map_size_y":6,
+        "bspos":[[32.8,0,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-88.4,45.3],[108.6,-121.1,24.9]],# ,[0,-1,2.95],[-4.9,0,2.7],[4.9,0,2.7]], # 基站位置
+        "map_center":[-76,9,0],
+        "map_size_x":230,
+        "map_size_y":45,
         "cell_size":2,
     },
 ]
@@ -114,24 +113,30 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
     y_conv = tf.matmul(y_i_H, y_i)
     _, eig_vecs = tf.linalg.eigh(y_conv)
     tau_range = np.arange(start,end, step)
-    frequencies_c = tf.cast(frequencies, dtype=tf.complex64)
-
-    P_tau_array = tf.TensorArray(dtype=tf.complex64, size=len(tau_range))
     G_n = tf.cast(eig_vecs[:,:-1], dtype=tf.complex64)
     G_n_H = tf.math.conj(tf.transpose(G_n))
-    for idx in range(len(tau_range)):
-        a_m = tf.expand_dims(tf.math.exp(-1j * 2 * np.pi * frequencies_c * (tau_range[idx]/1e9)), axis=0)
-        a_m_H = tf.math.conj(tf.transpose(a_m))
-        P_tau_array = P_tau_array.write(idx, 1 / (a_m @ G_n @ G_n_H @ a_m_H))
-
-    P_tau = P_tau_array.stack()
+    frequencies_c = tf.expand_dims(frequencies, axis=0)
+    frequencies_c = tf.repeat(frequencies_c, len(tau_range), axis=0)
+    frequencies_c = tf.cast(frequencies_c, dtype=tf.complex64)
+    tau_range = tf.expand_dims(tau_range, axis=-1)
+    tau_range = tf.repeat(tau_range, subcarrier_num, axis=-1)
+    tau_range = tf.cast(tau_range, dtype=tf.complex64)
+    a_m = tf.math.exp(-1j * 2 * np.pi * frequencies_c * (tau_range/1e9))
+    a_m_H = tf.math.conj(tf.transpose(a_m))
+    a_m_H = tf.expand_dims(a_m_H, axis=1)
+    a_m_H = tf.transpose(a_m_H, perm=[2,0,1])
+    a_m = tf.expand_dims(a_m, axis=1)
+    G_n = tf.expand_dims(G_n, axis=0)
+    G_n_H = tf.expand_dims(G_n_H, axis=0)
+    P = 1 / (a_m @ G_n @ G_n_H @ a_m_H)
+    P = tf.squeeze(P)
     # 计算谱函数
-    P_tau_real = tf.math.real(P_tau)
-    P_tau_imag = tf.math.imag(P_tau)
+    P_tau_real = tf.math.real(P)
+    P_tau_imag = tf.math.imag(P)
     P_abs = tf.math.sqrt(P_tau_real**2 + P_tau_imag**2)
-    P_norm = 10 * tf.math.log(P_abs / tf.reduce_max(P_abs), 10)
-    P_norm = tf.squeeze(P_norm)
-    max_idx = tf.argmax(P_norm)
+    # P_norm = 10 * tf.math.log(P_abs / tf.reduce_max(P_abs), 10)
+    # P_norm = tf.squeeze(P_norm)
+    max_idx = tf.argmax(P_abs)
     tau_est = (start + int(max_idx) * step)
     return tau_est*1e-9
 

@@ -13,7 +13,7 @@ model_save_path = './models/street/' # 模型保存路径
 DAS = 200 # Default Area Size,默认目标活动区域范围（200m）
 VCRT = 0.05 # Velocity Change Rate,速度变化概率 m/s
 VCS = 4 # Velocity Change Size,速度变化大小，即一次最多变化多少 m/s
-VCRG = [5,22.2] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
+VCRG = 22.2 # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
 TIME_SLOT = 0.5 # 时间间隔 s
 # 目标移动策略 random,graph
 # random: 在区域内随机移动，需更改配置DAS，目标将在以原点为中心，边长为2*DAS的正方形区域内随机移动
@@ -26,11 +26,12 @@ TIME_SLOT = 0.5 # 时间间隔 s
 MOVE_STRATEGY = 'graph' 
 
 class CNNnet(tf.keras.Model):
-    def __init__(self, num_action,input_shape):
+    def __init__(self, num_action):
         super().__init__()
-        self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu',input_shape=input_shape)
+        self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu')
         self.maxpool1 = tf.keras.layers.MaxPooling2D((2, 2))
         self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
+        self.maxpool2 = tf.keras.layers.MaxPooling2D((2, 2))
         self.conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu')
         self.flat = tf.keras.layers.Flatten()
         self.dense = tf.keras.layers.Dense(units=512, activation='relu')
@@ -40,23 +41,25 @@ class CNNnet(tf.keras.Model):
         x = self.conv1(inputs)
         x = self.maxpool1(x)
         x = self.conv2(x)
+        #x = self.maxpool2(x)
         x = self.conv3(x)
         x = self.flat(x)
         x = self.dense(x)
         return self.out(x)
 
 class CNN():
-    def __init__(self,num_action,input_shape, **kwargs):
+    def __init__(self,num_feature,num_action, **kwargs):
         self.learning_rate = kwargs.get('learning_rate',0.01)
         self.batch_size = kwargs.get('batch_size',32)
-        self.input_shape = input_shape
+        self.width = kwargs.get('width',32)
+        self.hight = kwargs.get('hight',14)
         self.batch_buffer = None
         self.label_buffer = np.zeros((self.batch_size))
         self._buf_count = 0
         self.loss=[]
         self.acc=[]
         
-        self.net = CNNnet(num_action,input_shape)
+        self.net = CNNnet(num_action)
         self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),metrics=['accuracy'])
     
     def store_data(self, data, label):
@@ -79,24 +82,8 @@ class CNN():
         self.save_model(model_save_path)
         print(f"loss: {loss}, acc: {acc}")
     
-    def predict(self,data):
-        data_real = tf.math.real(data)
-        data_img = tf.math.imag(data)
-        data = tf.concat([data_real,data_img],axis=-1)
-        data = tf.expand_dims(data,axis=0)
-        data = tf.convert_to_tensor(data)
-        pred = self.net.predict(data)[0]
-        return tf.argmax(pred)
-    
     def save_model(self,path):
         self.net.save_weights(path+'model.h5')
-        with open(path+'loss.txt','w') as f:
-            f.write(str(self.loss))
-        with open(path+'acc.txt','w') as f:
-            f.write(str(self.acc))
-    
-    def load_model(self,path):
-        self.net.load_weights(path+'model.h5')
     
     @property
     def buf_count(self):
@@ -456,9 +443,7 @@ class Environment():
         self.next_pos_idx = 1
         self.pos_now = self.pos_list[self.next_pos_idx-1]
         pos_dis = self.pos_list[self.next_pos_idx]-self.pos_list[self.next_pos_idx-1]
-        self.velocity_now = (pos_dis)/(np.linalg.norm((pos_dis))) * np.random.rand() * VCRG[1] # 单位向量*速度*随机范围
-        if np.linalg.norm(self.velocity_now) < VCRG[0]:
-            self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[0]
+        self.velocity_now = (pos_dis)/(np.linalg.norm((pos_dis))) * np.random.rand() * VCRG # 单位向量*速度*随机范围
         # 设置场景，获取CSI
         target = Target(self.target_path, self.target_material, translate=self.pos_now)
         self.scene = self.mk_sionna_env(tg=target,tgname=[self.target_name],tgv=[self.velocity_now])
@@ -490,10 +475,6 @@ class Environment():
         # 速度随机变化-----------------------------------------------------------------------------------
         if np.random.rand() < VCRT:
             self.velocity_now = self.velocity_now * (((np.random.rand()*2-1)*VCS + np.linalg.norm(self.velocity_now))/np.linalg.norm(self.velocity_now))
-            if np.linalg.norm(self.velocity_now) < VCRG[0]:
-                self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[0]
-            elif np.linalg.norm(self.velocity_now) > VCRG[1]:
-                self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
         # 下一次state-----------------------------------------------------------------------------------
         tg = Target(self.target_path, self.target_material, translate=self.pos_now)
         self.scene = self.mk_sionna_env(tg=tg,tgname=[self.target_name],tgv=[self.velocity_now])
@@ -515,14 +496,15 @@ class Environment():
         self.doppler_params["target_velocities"] = self.scene.compute_target_velocities(self.paths)
         self.paths.apply_doppler(**self.doppler_params)
         a,tau = self.paths.cir()
+        del self.paths
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
         label = 0
-        best_reward = -99999
-        self.reward = self._get_reward(action=0,method='crb')
-        for i,r in enumerate(self.reward):
-            if self.los[i] and r > best_reward:
-                best_reward = r
-                label = i
+        best_reward = -1
+        for action in range(self.BS_num):
+            reward = self._get_reward(action)
+            if reward > best_reward:
+                best_reward = reward
+                label = action
         data = self.h_freq[0,:,0,:,0,:,:]
         data = tf.transpose(data,perm=[2,3,0,1])
         data = tf.linalg.diag_part(data)
@@ -548,10 +530,6 @@ class Environment():
         # 速度随机变化-----------------------------------------------------------------------------------
         if np.random.rand() < VCRT:
             self.velocity_now = self.velocity_now * (((np.random.rand()*2-1)*VCS + np.linalg.norm(self.velocity_now))/np.linalg.norm(self.velocity_now))
-            if np.linalg.norm(self.velocity_now) < VCRG[0]:
-                self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[0]
-            elif np.linalg.norm(self.velocity_now) > VCRG[1]:
-                self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
         return data,label,self.done
     
     def _normalize_h(self,h):
@@ -624,35 +602,8 @@ class Environment():
             else:
                 self.range_est = 0
                 return -1
-        elif method == 'crb':
-            mask = self.scene.get_obj_mask(self.paths,singleBS=True)[0]
-            # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
-            crb = self.paths.crb_delay(diag=True,mask = mask)
-            crb_target = tf.where(mask, crb, 1)
-            a = tf.where(mask,self.paths.a,0)
-            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,num_tx]
-            a = tf.transpose(a,perm=[0,2,4,5,6,1,3])
-            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx]
-            a = tf.linalg.diag_part(a)
-            # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,1]
-            a = tf.expand_dims(a, axis=-1)
-            a = tf.transpose(a,perm=[0,5,1,6,2,3,4])
-            a = tf.abs(a)
-            crb_target = tf.reduce_min(crb_target, axis=6)
-            crb_target = tf.reduce_min(crb_target, axis=4)
-            crb_target = tf.reduce_min(crb_target, axis=2)
-            a = tf.reduce_max(a, axis=6)
-            a = tf.reduce_max(a, axis=4)
-            a = tf.reduce_max(a, axis=2)
-            a_sortidx = tf.argsort(a, axis=-1, direction='DESCENDING')
-            a_max_idx = tf.gather(a_sortidx, 0, axis=-1)
-            a_max_idx = tf.reshape(a_max_idx, [-1])
-            crb_target = tf.gather(crb_target, a_max_idx, axis=-1)
-            crb_target = tf.reshape(crb_target, [-1,a_max_idx.shape[0]])
-            crb_target = tf.linalg.diag_part(crb_target)
-            crb_target = tf.reshape(crb_target, [a.shape[0], a.shape[1], a.shape[2]])
-            crb_target = tf.squeeze(crb_target)
-            return -np.log10(crb_target)
+        else:
+            return 1
     
     def _is_los(self):
         # [batch_size,max_num_paths]
@@ -706,23 +657,8 @@ def run1():
         inner_step = 0
         while True:
             data,label,done = env.get_data_label()
-            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{label}\terror:{np.abs((env.range_true-env.range_est)*100/env.range_true):.2f}%\t{env.los}")
             CN.store_data(data,label)
-            if done:
-                break
-            step += 1
-            inner_step += 1
-
-def test():
-    step = 0
-    for episode in range(3000):
-        print(f"====={episode}th episode start=====")
-        env.reset()
-        inner_step = 0
-        while True:
-            data,label,done = env.get_data_label()
-            pred = CN.predict(data)
-            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tBS:{label}\tpred:{pred}")
             if done:
                 break
             step += 1
@@ -736,11 +672,8 @@ if __name__ == "__main__":
     env = Environment()
     model_save_path = f'./models/street/{env.n_features}-{env.action_space}/'
     # RL = DQN(env.n_features,env.action_space,memory_size=5000,best_action=True,best_prob=0.8)
-    CN = CNN(env.action_space,input_shape=(env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2),batch_size=512)
-    dummy_data = tf.random.normal((512,env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2))
-    # CN.net(dummy_data)
-    # CN.load_model(model_save_path)
-    # test()
+    CN = CNN(env.n_features,env.action_space,width = env.doppler_params["num_time_steps"],hight = env.subcarrier_num,batch_size=512)
+    
     run1()
 
 

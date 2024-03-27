@@ -1,0 +1,69 @@
+<scene version="2.1.0">
+
+
+
+	<default name="spp" value="4096" />
+	<default name="resx" value="1920" />
+	<default name="resy" value="1080" />
+
+
+
+	<integrator type="path" id="elm__0" name="elm__0">
+		<integer name="max_depth" value="12" />
+	</integrator>
+	<sensor type="perspective" id="Camera" name="Camera">
+		<string name="fov_axis" value="x" />
+		<float name="fov" value="39.597755" />
+		<float name="principal_point_offset_x" value="0.000000" />
+		<float name="principal_point_offset_y" value="-0.000000" />
+		<float name="near_clip" value="0.100000" />
+		<float name="far_clip" value="100.000000" />
+		<transform name="to_world">
+			<rotate x="1" angle="116.44070980054053" />
+			<rotate y="1" angle="5.419622430558914e-06" />
+			<rotate z="1" angle="-133.30805320118378" />
+			<translate value="7.358891 -6.925791 4.958309" />
+		</transform>
+		<sampler type="independent" name="sampler">
+			<integer name="sample_count" value="$spp" />
+		</sampler>
+		<film type="hdrfilm" name="film">
+			<integer name="width" value="$resx" />
+			<integer name="height" value="$resy" />
+		</film>
+	</sensor>
+
+
+
+	<bsdf type="diffuse" id="mat-itu_concrete" name="mat-itu_concrete">
+		<rgb value="0.8 0.8 0.8" name="reflectance" />
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_glass" name="mat-itu_glass">
+		<rgb value="0.1 0.8 0.6" name="reflectance" />
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_medium_dry_ground" name="mat-itu_medium_dry_ground">
+		<rgb value="0.8 0.8 0.8" name="reflectance" />
+	</bsdf>
+	<bsdf type="diffuse" id="mat-itu_metal" name="mat-itu_metal">
+		<rgb value="0.8 0.5 0.1" name="reflectance" />
+	</bsdf>
+
+
+
+	<emitter type="point" id="emit-Light" name="emit-Light">
+		<point name="position" x="4.076245307922363" y="1.0054539442062378" z="129.946533203125" />
+		<rgb value="79.577469 79.577469 79.577469" name="intensity" />
+	</emitter>
+
+
+
+<shape type="ply" id="mesh-car" name="mesh-car">
+    <string name="filename" value="meshes/car.ply" />
+    <boolean name="face_normals" value="true" />
+	<ref id="mat-itu_metal" name="bsdf" />
+    <transform name="to_world">
+        <rotate x="0.0" y="0.0" z="0.0" angle="0.0" />
+        <scale x="1.0" y="1.0" z="1.0" />
+        <translate x="7.8" y="-129.6" z="0.0" />
+    </transform>
+    </shape></scene>

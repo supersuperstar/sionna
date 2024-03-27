@@ -50,6 +50,7 @@
 
 
 
+
 	<emitter type="point" id="emit-Light" name="emit-Light">
 		<point name="position" x="4.076245307922363" y="1.0054539442062378" z="129.946533203125" />
 		<rgb value="79.577469 79.577469 79.577469" name="intensity" />
@@ -172,6 +173,6 @@
     <transform name="to_world">
         <rotate x="0.0" y="0.0" z="0.0" angle="0.0" />
         <scale x="1.0" y="1.0" z="1.0" />
-        <translate x="9" y="166" z="0" />
+        <translate x="-174.99220608267498" y="-5.769584972982106" z="0.05" />
     </transform>
     </shape></scene>

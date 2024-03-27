@@ -752,7 +752,7 @@ class Paths:
         # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, num_time_steps, max_num_paths, max_num_paths]
         F = tf.transpose(F,perm=[0,1,2,3,4,7,5,6])
         # F = tf.cast(F,tf.float64)
-        F = tf.reshape(F, [-1,max_num_paths,max_num_paths]) * 1e-18
+        F = tf.reshape(F, [-1,max_num_paths,max_num_paths])
         crb = tf.linalg.diag_part(tf.linalg.pinv(F))
         crb = tf.abs(crb)
         # for the paths that are not valid, set the crb to 1

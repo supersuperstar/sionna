@@ -1975,12 +1975,31 @@ class Scene:
             for mask in masks:
                 if only_target:
                     # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
-                    crb = path.crb_delay(diag=singleBS,mask = mask)
+                    crb = path.crb_delay(snr=snr,diag=singleBS,mask = mask)
                 crb_target = tf.where(mask, crb, 1)
+                a = tf.where(mask,path.a,0)
+                if singleBS: 
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,num_tx]
+                    a = tf.transpose(a,perm=[0,2,4,5,6,1,3])
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx]
+                    a = tf.linalg.diag_part(a)
+                    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,1]
+                    a = tf.expand_dims(a, axis=-1)
+                    a = tf.transpose(a,perm=[0,5,1,6,2,3,4])
+                a = tf.abs(a)
                 crb_target = tf.reduce_min(crb_target, axis=6)
-                crb_target = tf.reduce_min(crb_target, axis=5)
                 crb_target = tf.reduce_min(crb_target, axis=4)
                 crb_target = tf.reduce_min(crb_target, axis=2)
+                a = tf.reduce_max(a, axis=6)
+                a = tf.reduce_max(a, axis=4)
+                a = tf.reduce_max(a, axis=2)
+                a_sortidx = tf.argsort(a, axis=-1, direction='DESCENDING')
+                a_max_idx = tf.gather(a_sortidx, 0, axis=-1)
+                a_max_idx = tf.reshape(a_max_idx, [-1])
+                crb_target = tf.gather(crb_target, a_max_idx, axis=-1)
+                crb_target = tf.reshape(crb_target, [-1,a_max_idx.shape[0]])
+                crb_target = tf.linalg.diag_part(crb_target)
+                crb_target = tf.reshape(crb_target, [a.shape[0], a.shape[1], a.shape[2]])
                 # crb_target = tf.where(crb_target == 1, 0, crb_target)
                 crbs[-1].append(crb_target)
             """ 

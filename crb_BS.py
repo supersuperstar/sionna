@@ -17,7 +17,7 @@ import numpy as np
 import sionna
 import tqdm
 import json
-import pandas as pd
+# import pandas as pd
 from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
 # Import Sionna RT components
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
@@ -45,18 +45,18 @@ scat_keep_prob = config.get("scat_keep_prob")
 scene_info = [
     {
         "scene_name":"indoor", # 场景名称
-        "paths":"./scenes/Indoor/indoor.xml", # 场景路径
-        "tgpath":"meshes/human.ply", # 目标路径
-        "tgmat":"itu_plywood", # 目标材质
-        "tgname":"human", # 目标名称
-        "tgpos":[[-3,2,0],[-3,-1.5,0],[3,-2,0],[3,2,0]], # 目标位置
-        "tgscales":[[1,1,1],[1,1,1],[1,1,1],[1,1,1]], # 目标缩放
-        "tgrots":[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], # 目标旋转
-        "tgvs":[[0.8,0,0],[0.8,0,0],[0.8,0,0],[0.8,0,0]], # 目标速度
-        "map_center":[0,0,2.95],
-        "map_size_x":10,
-        "map_size_y":6,
-        "cell_size":0.2,
+        "paths":"./scenes/Street/street.xml", # 场景路径
+        "tgpath":"meshes/car.ply", # 目标路径
+        "tgmat":"itu_metal", # 目标材质
+        "tgname":"car", # 目标名称
+        "tgpos":[[0,0,0]], # 目标位置
+        "tgscales":[[1,1,1]], # 目标缩放
+        "tgrots":[[0,0,0,0]], # 目标旋转
+        "tgvs":[[0,0,0]], # 目标速度
+        "map_center":[0,0,30],
+        "map_size_x":20,
+        "map_size_y":20,
+        "cell_size":10,
     },
     # {
     #     "scene_name":"street", # 场景名称
@@ -130,7 +130,7 @@ def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
     _, eig_vecs = tf.linalg.eigh(y_conv)
     tau_range = np.arange(start,end, step)
 
-    G_n = tf.cast(eig_vecs[:,:-4], dtype=tf.complex64)
+    G_n = tf.cast(eig_vecs[:,:-1], dtype=tf.complex64)
     G_n_H = tf.math.conj(tf.transpose(G_n))
     frequencies_c = tf.expand_dims(frequencies, axis=0)
     frequencies_c = tf.repeat(frequencies_c, len(tau_range), axis=0)
@@ -497,7 +497,7 @@ def main():
                     #     start = 0
                     # end = tau+step*500
                     start = 0
-                    end = 200
+                    end = 2000
                     try:
                         t = music(h,frequencies,start=start,end=end,step=step)
                     except:

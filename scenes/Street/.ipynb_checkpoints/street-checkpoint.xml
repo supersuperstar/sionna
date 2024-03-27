@@ -36,18 +36,17 @@
 <!-- Materials -->
 
 	<bsdf type="diffuse" id="mat-itu_concrete" name="mat-itu_concrete">
-		<rgb value="0.8 0.8 0.8" name="reflectance" />
+		<rgb value="0.8 0.8 0.8" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_glass" name="mat-itu_glass">
-		<rgb value="0.1 0.8 0.6" name="reflectance" />
+		<rgb value="0.1 0.8 0.6" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_medium_dry_ground" name="mat-itu_medium_dry_ground">
-		<rgb value="0.8 0.8 0.8" name="reflectance" />
+		<rgb value="0.8 0.8 0.8" name="reflectance"/>
 	</bsdf>
 	<bsdf type="diffuse" id="mat-itu_metal" name="mat-itu_metal">
-		<rgb value="0.8 0.5 0.1" name="reflectance" />
+		<rgb value="0.8 0.5 0.1" name="reflectance"/>
 	</bsdf>
-
 
 <!-- Emitters -->
 
@@ -58,7 +57,7 @@
 
 <!-- Shapes -->
 
-	<shape type="ply" id="mesh-b1-itu_concrete" name="mesh-b1-itu_concrete">
+<!-- 	<shape type="ply" id="mesh-b1-itu_concrete" name="mesh-b1-itu_concrete">
 		<string name="filename" value="meshes/b1-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
@@ -67,13 +66,13 @@
 		<string name="filename" value="meshes/b1-itu_glass.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_glass" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-ground" name="mesh-ground">
+	</shape> -->
+<!-- 	<shape type="ply" id="mesh-ground" name="mesh-ground">
 		<string name="filename" value="meshes/ground.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_medium_dry_ground" name="bsdf"/>
-	</shape>
-	<shape type="ply" id="mesh-b2-itu_concrete" name="mesh-b2-itu_concrete">
+	</shape> -->
+<!-- 	<shape type="ply" id="mesh-b2-itu_concrete" name="mesh-b2-itu_concrete">
 		<string name="filename" value="meshes/b2-itu_concrete.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
@@ -162,7 +161,7 @@
 		<string name="filename" value="meshes/b17.ply"/>
 		<boolean name="face_normals" value="true"/>
 		<ref id="mat-itu_concrete" name="bsdf"/>
-	</shape>
+	</shape> -->
 
 <!-- Volumes -->
 
