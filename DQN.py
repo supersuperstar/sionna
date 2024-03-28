@@ -26,29 +26,35 @@ TIME_SLOT = 0.5 # 时间间隔 s
 MOVE_STRATEGY = 'graph' 
 
 class CNNnet(tf.keras.Model):
-    def __init__(self, num_action,input_shape):
+    def __init__(self, num_action,input_shape,target_info_as_input=False):
         super().__init__()
+        self.target_info_as_input = target_info_as_input
         self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu',input_shape=input_shape)
-        self.maxpool1 = tf.keras.layers.MaxPooling2D((2, 2))
+        # self.maxpool1 = tf.keras.layers.MaxPooling2D((2, 2))
         self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
         self.conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu')
         self.flat = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(units=512, activation='relu')
+        self.dense1 = tf.keras.layers.Dense(units=1024, activation='relu')
+        self.dense2 = tf.keras.layers.Dense(units=512, activation='relu')
         self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
 
     def call(self, inputs):
-        x = self.conv1(inputs)
-        x = self.maxpool1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.flat(x)
-        x = self.dense(x)
+        x = inputs
+        if not self.target_info_as_input:
+            x = self.conv1(inputs)
+            # x = self.maxpool1(x)
+            x = self.conv2(x)
+            x = self.conv3(x)
+            x = self.flat(x)
+        x = self.dense1(x)
+        x = self.dense2(x)
         return self.out(x)
 
 class CNN():
     def __init__(self,num_action,input_shape, **kwargs):
-        self.learning_rate = kwargs.get('learning_rate',0.01)
+        self.learning_rate = kwargs.get('learning_rate',0.00001)
         self.batch_size = kwargs.get('batch_size',32)
+        self.target_info_as_input = kwargs.get('target_info_as_input',False)
         self.input_shape = input_shape
         self.batch_buffer = None
         self.label_buffer = np.zeros((self.batch_size))
@@ -56,15 +62,19 @@ class CNN():
         self.loss=[]
         self.acc=[]
         
-        self.net = CNNnet(num_action,input_shape)
-        self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),metrics=['accuracy'])
+        self.net = CNNnet(num_action,input_shape,self.target_info_as_input)
+        self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),metrics=['accuracy'])
     
     def store_data(self, data, label):
-        data_real = tf.math.real(data)
-        data_img = tf.math.imag(data)
-        data = tf.concat([data_real,data_img],axis=-1)
+        if not self.target_info_as_input:
+            data_real = tf.math.real(data)
+            data_img = tf.math.imag(data)
+            data = tf.concat([data_real,data_img],axis=-1)
         if self.batch_buffer is None:
-            self.batch_buffer = np.zeros((self.batch_size,data.shape[0],data.shape[1],data.shape[2]))
+            if self.target_info_as_input:
+                self.batch_buffer = np.zeros((self.batch_size,data.shape[0]))
+            else:
+                self.batch_buffer = np.zeros((self.batch_size,data.shape[0],data.shape[1],data.shape[2]))
         self.batch_buffer[self.buf_count] = np.array(data)
         self.label_buffer[self.buf_count] = np.array(label)
         self.buf_count = self.buf_count + 1
@@ -89,6 +99,8 @@ class CNN():
         return tf.argmax(pred)
     
     def save_model(self,path):
+        if not os.path.exists(path):
+            os.makedirs(path)
         self.net.save_weights(path+'model.h5')
         with open(path+'loss.txt','w') as f:
             f.write(str(self.loss))
@@ -96,7 +108,14 @@ class CNN():
             f.write(str(self.acc))
     
     def load_model(self,path):
+        if not os.path.exists(path+'model.h5'):
+            print('model not found')
+            return
         self.net.load_weights(path+'model.h5')
+        with open(path+'loss.txt','r') as f:
+            self.loss = eval(f.read())
+        with open(path+'acc.txt','r') as f:
+            self.acc = eval(f.read())
     
     @property
     def buf_count(self):
@@ -260,7 +279,7 @@ class Environment():
             # points: [num2,3] float,指定的移动点
             self.points = kwargs.get('points',np.array([[0,0,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
-            self.point_bias = kwargs.get('point_bias',6)
+            self.point_bias = kwargs.get('point_bias',0)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
             self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]]))
             self.num_points = len(self.points)
@@ -300,7 +319,7 @@ class Environment():
         self.ray_tracing_params = {
             "max_depth": kwargs.get('max_depth',1),
             "method": kwargs.get('method','fibonacci'),
-            "num_samples": kwargs.get('num_samples',int(1e6 * self.BS_num)),
+            "num_samples": kwargs.get('num_samples',int(4e5 * self.BS_num)),
             "los": kwargs.get('los',True),
             "reflection": kwargs.get('reflection',True),
             "diffraction": kwargs.get('diffraction',True),
@@ -500,7 +519,7 @@ class Environment():
         self.next_observation = self.get_observation()            
         return self.next_observation, self.reward, self.done 
     # for CNN
-    def get_data_label(self):
+    def get_data_label(self,target_info=False):
         # 判断基站和目标之间是否是视距
         self.scene = self.mk_sionna_env(test=True)
         self.paths = self.scene.compute_paths(**self.ray_tracing_params)
@@ -523,9 +542,10 @@ class Environment():
             if self.los[i] and r > best_reward:
                 best_reward = r
                 label = i
-        data = self.h_freq[0,:,0,:,0,:,:]
-        data = tf.transpose(data,perm=[2,3,0,1])
-        data = tf.linalg.diag_part(data)
+        if not target_info:
+            data = self.h_freq[0,:,0,:,0,:,:]
+            data = tf.transpose(data,perm=[2,3,0,1])
+            data = tf.linalg.diag_part(data)
         # data = tf.transpose(data,perm=[2,0,1])
         # data = tf.reshape(data,[-1,self.doppler_params["num_time_steps"],self.subcarrier_num])
         # data = tf.transpose(data,perm=[1,2,0])
@@ -552,6 +572,9 @@ class Environment():
                 self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[0]
             elif np.linalg.norm(self.velocity_now) > VCRG[1]:
                 self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
+        
+        if target_info:
+            return tf.concat([tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),label,self.done
         return data,label,self.done
     
     def _normalize_h(self,h):
@@ -705,7 +728,7 @@ def run1():
         env.reset()
         inner_step = 0
         while True:
-            data,label,done = env.get_data_label()
+            data,label,done = env.get_data_label(target_info=True)
             print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
             CN.store_data(data,label)
             if done:
@@ -728,17 +751,37 @@ def test():
             step += 1
             inner_step += 1
 
+def store_data():
+    datas = np.zeros((None,6))
+    labels = np.zeros((None))
+    step = 0
+    for episode in range(1000):
+        print(f"====={episode}th episode start=====")
+        env.reset()
+        inner_step = 0
+        while True:
+            data,label,done = env.get_data_label(target_info=True)
+            # print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
+            datas = np.concatenate((datas,data),axis=0)
+            labels = np.concatenate((labels,label),axis=0)
+            if done:
+                break
+            step += 1
+            inner_step += 1
+    np.save('datas.npy',datas)
+    np.save('labels.npy',labels)
+
 if __name__ == "__main__":
     np.set_printoptions(precision=1)
     # end_points = np.array([[0,-170,0.05],[0,170,0.05]])
     # points = np.array([])
     # point_path = np.array([[0,1],[1,0]])
     env = Environment()
-    model_save_path = f'./models/street/{env.n_features}-{env.action_space}/'
+    model_save_path = f'./models/street/cnn/'
     # RL = DQN(env.n_features,env.action_space,memory_size=5000,best_action=True,best_prob=0.8)
-    CN = CNN(env.action_space,input_shape=(env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2),batch_size=512)
-    dummy_data = tf.random.normal((512,env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2))
-    # CN.net(dummy_data)
+    CN = CNN(env.action_space,input_shape=(env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2),batch_size=32,target_info_as_input=True)
+    # dummy_data = tf.random.normal((512,env.doppler_params["num_time_steps"],env.subcarrier_num,env.BS_num*2))
+    # CN.net.predict(dummy_data)
     # CN.load_model(model_save_path)
     # test()
     run1()
