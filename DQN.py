@@ -13,7 +13,7 @@ model_save_path = './models/street/' # 模型保存路径
 DAS = 200 # Default Area Size,默认目标活动区域范围（200m）
 VCRT = 0.05 # Velocity Change Rate,速度变化概率 m/s
 VCS = 4 # Velocity Change Size,速度变化大小，即一次最多变化多少 m/s
-VCRG = [5,22.2] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
+VCRG = [10,10] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
 TIME_SLOT = 0.5 # 时间间隔 s
 # 目标移动策略 random,graph
 # random: 在区域内随机移动，需更改配置DAS，目标将在以原点为中心，边长为2*DAS的正方形区域内随机移动
@@ -34,8 +34,10 @@ class CNNnet(tf.keras.Model):
         self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
         self.conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu')
         self.flat = tf.keras.layers.Flatten()
+        self.dense = tf.keras.layers.Dense(units=512, activation='relu')
         self.dense1 = tf.keras.layers.Dense(units=1024, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(units=512, activation='relu')
+        self.dense2 = tf.keras.layers.Dense(units=1024, activation='relu')
+        self.dense3 = tf.keras.layers.Dense(units=512, activation='relu')
         self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
 
     def call(self, inputs):
@@ -46,8 +48,10 @@ class CNNnet(tf.keras.Model):
             x = self.conv2(x)
             x = self.conv3(x)
             x = self.flat(x)
+        x = self.dense(x)
         x = self.dense1(x)
         x = self.dense2(x)
+        x = self.dense3(x)
         return self.out(x)
 
 class CNN():
@@ -279,7 +283,7 @@ class Environment():
             # points: [num2,3] float,指定的移动点
             self.points = kwargs.get('points',np.array([[0,0,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
-            self.point_bias = kwargs.get('point_bias',0)
+            self.point_bias = kwargs.get('point_bias',1)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
             self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]]))
             self.num_points = len(self.points)
@@ -291,7 +295,7 @@ class Environment():
         self.target_num = kwargs.get('target_num',1)
         self.target_name = kwargs.get('target_name','car')
         self.target_path = kwargs.get('target_path','meshes/car.ply')
-        self.target_material = kwargs.get('target_material','itu_metal')
+        self.target_material = kwargs.get('target_material','itu_concrete')
         self.target_size = kwargs.get('target_size',2.0) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         # 天线配置参数 ---------------------------------------------------------
         self.tx_params = {
@@ -546,6 +550,8 @@ class Environment():
             data = self.h_freq[0,:,0,:,0,:,:]
             data = tf.transpose(data,perm=[2,3,0,1])
             data = tf.linalg.diag_part(data)
+        else:
+            data = tf.concat([tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0)
         # data = tf.transpose(data,perm=[2,0,1])
         # data = tf.reshape(data,[-1,self.doppler_params["num_time_steps"],self.subcarrier_num])
         # data = tf.transpose(data,perm=[1,2,0])
@@ -574,7 +580,7 @@ class Environment():
                 self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
         
         if target_info:
-            return tf.concat([tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),label,self.done
+            return tf.concat([data,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),label,self.done
         return data,label,self.done
     
     def _normalize_h(self,h):
@@ -752,24 +758,30 @@ def test():
             inner_step += 1
 
 def store_data():
-    datas = np.zeros((None,6))
-    labels = np.zeros((None))
+    if os.path.exists('datas.npy'):
+        datas = np.load('datas.npy')
+        labels = np.load('labels.npy')
+    else:
+        datas = np.zeros((1,12),dtype=np.float32)
+        labels = np.zeros((1),dtype=np.int32)
     step = 0
-    for episode in range(1000):
+    for episode in range(1500):
         print(f"====={episode}th episode start=====")
         env.reset()
         inner_step = 0
         while True:
             data,label,done = env.get_data_label(target_info=True)
-            # print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
+            data = np.expand_dims(data,axis=0)
+            label = np.array([label],dtype=np.int32)
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
             datas = np.concatenate((datas,data),axis=0)
             labels = np.concatenate((labels,label),axis=0)
             if done:
                 break
             step += 1
             inner_step += 1
-    np.save('datas.npy',datas)
-    np.save('labels.npy',labels)
+        np.save('datas.npy',datas)
+        np.save('labels.npy',labels)
 
 if __name__ == "__main__":
     np.set_printoptions(precision=1)
@@ -784,7 +796,8 @@ if __name__ == "__main__":
     # CN.net.predict(dummy_data)
     # CN.load_model(model_save_path)
     # test()
-    run1()
+    store_data()
+    # run1()
 
 
 
