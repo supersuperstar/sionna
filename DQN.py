@@ -798,8 +798,8 @@ def store_data():
         np.save(label_path,labels)
 
 if __name__ == "__main__":
-    data_path = 'datas-new.npy'
-    label_path = 'labels-new.npy'
+    data_path = 'datas-4010.npy'
+    label_path = 'labels-4010.npy'
     np.set_printoptions(precision=1)
     # end_points = np.array([[0,-170,0.05],[0,170,0.05]])
     # points = np.array([])
