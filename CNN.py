@@ -17,12 +17,13 @@ class CNNnet(tf.keras.Model):
         self.dense = tf.keras.Sequential()
         self.dense.add(tf.keras.layers.Dense(units=64, activation='relu'))
         self.dense.add(tf.keras.layers.Dense(units=128, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=512, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=1024, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=512, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=128, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=64, activation='relu'))
-        self.out = tf.keras.layers.Dense(units=num_action,activation='linear')
+        # self.dense.add(tf.keras.layers.Dense(units=512, activation='relu'))
+        self.dense.add(tf.keras.layers.Dropout(0.2))
+        # self.dense.add(tf.keras.layers.Dense(units=1024, activation='sigmoid'))
+        # self.dense.add(tf.keras.layers.Dense(units=512, activation='sigmoid'))
+        # self.dense.add(tf.keras.layers.Dense(units=128, activation='sigmoid'))
+        # self.dense.add(tf.keras.layers.Dense(units=64, activation='sigmoid'))
+        self.out = tf.keras.layers.Dense(units=num_action, activation='softmax')
 
     def call(self, inputs):
         x = inputs
@@ -37,46 +38,80 @@ class CNNnet(tf.keras.Model):
 
 class CNN():
     def __init__(self,num_action,input_shape,datas,labels, **kwargs):
-        self.learning_rate = kwargs.get('learning_rate',0.01)
+        self.learning_rate = kwargs.get('learning_rate',0.1)
         self.batch_size = kwargs.get('batch_size',32)
         self.target_info_as_input = kwargs.get('target_info_as_input',False)
+        self.save = kwargs.get('save',True)
         self.input_shape = input_shape
+        self.label_num = num_action
         self.datas = datas
         self.labels = labels
         self._buf_count = 0
         self.train_loss = []
+        self.train_acc = []
         self.loss=[]
         self.acc=[]
         
         self.net = CNNnet(num_action,input_shape,self.target_info_as_input)
-        self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),metrics=['accuracy'])
+        # self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+        # self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+        self.net.compile(optimizer=tf.keras.optimizers.Adam(self.learning_rate),loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),metrics=['accuracy'])
     
-    def train_test_split(self,test_size=0.1):
+    def train_test_split(self,test_size=0.05):
         test_size = int(len(self.datas)*test_size)
-        randidx = np.random.permutation(len(self.datas))
-        self.train_datas = self.datas[randidx[test_size:]]
-        self.train_labels = self.labels[randidx[test_size:]]
-        self.test_datas = self.datas[randidx[:test_size]]
-        self.test_labels = self.labels[randidx[:test_size]]
+        np.random.seed(0)
+        rand_idx = np.random.permutation(len(self.datas))
+        self.train_datas = self.datas[rand_idx[test_size:]]
+        self.train_labels = self.labels[rand_idx[test_size:]]
+        self.test_datas = self.datas[rand_idx[:test_size]]
+        self.test_labels = self.labels[rand_idx[:test_size]]
     
     def learn(self,eopchs):
         best_loss = 100
+        """for epoch in range(eopchs):
+            with tf.GradientTape() as tape:
+                y_pred = self.net(self.train_datas)      # 调用模型 y_pred = model(X) 而不是显式写出 y_pred = a * X + b
+                loss = tf.keras.losses.sparse_categorical_crossentropy(self.train_labels, y_pred)
+                loss = tf.reduce_mean(loss)
+                print (f'epoch: {epoch}, loss: {loss}')
+                grads = tape.gradient(loss, self.net.variables)    # 使用 model.variables 这一属性直接获得模型中的所有变量
+                self.optimizer.apply_gradients(grads_and_vars=zip(grads, self.net.variables))
+                if self.save and loss<best_loss:
+                    best_loss = loss
+                    self.save_model(model_save_path)
+                    print('==================model saved!==================')"""
         for epoch in range(eopchs):
-            bar = tqdm.tqdm(range(0,len(self.train_datas),self.batch_size))
+            '''bar = tqdm.tqdm(range(0,len(self.train_datas),self.batch_size))
             randidx = np.random.permutation(len(self.train_datas))
+            loss_list = []
+            acc_list = []
             for i in range(0,len(self.train_datas),self.batch_size):
                 if i+self.batch_size>len(self.train_datas):
                     batch_datas = self.train_datas[randidx[i:]]
                     batch_labels = self.train_labels[randidx[i:]]
                 batch_datas = self.train_datas[randidx[i:i+self.batch_size]]
                 batch_labels = self.train_labels[randidx[i:i+self.batch_size]]
-                self.net.train_on_batch(batch_datas,batch_labels)
-                bar.update(1)
-            loss,acc = self.net.evaluate(self.train_datas,self.train_labels)
+                loss,acc = self.net.fit(batch_datas,batch_labels)
+                loss_list.append(loss)
+                acc_list.append(acc)
+                bar.update(1)'''
+            history=self.net.fit(self.train_datas,self.train_labels,batch_size=self.batch_size)
+            train_loss = history.history['loss']
+            train_acc = history.history['accuracy']
+            self.train_loss.append(train_loss)
+            self.train_acc.append(train_acc)
+            loss,acc = self.net.evaluate(self.test_datas,self.test_labels)
             self.loss.append(loss)
             self.acc.append(acc)
-            print('epoch:',epoch,'loss:',loss,'acc:',acc)
-            if loss<best_loss:
+            # pred = self.net.predict(self.test_datas)
+            # pred = np.argmax(pred,axis=-1)
+            # result_percent = np.zeros((self.label_num))
+            # for i in range(self.label_num):
+            #     result_percent[i] = np.sum(pred==i)
+            # result_percent = result_percent/np.sum(result_percent)
+            # print(result_percent)
+            # print(f'epoch:{epoch} loss:{loss:.4f} acc:{acc:.4f} train_loss:{np.mean(loss_list):.4f} train_acc:{np.mean(acc_list):.4f}')
+            if self.save and loss<best_loss:
                 best_loss = loss
                 self.save_model(model_save_path)
                 print('==================model saved!==================')
@@ -94,12 +129,15 @@ class CNN():
         if not os.path.exists(path):
             os.makedirs(path)
         self.net.save_weights(path+'model.h5')
-        with open(path+'loss.txt','w') as f:
-            f.write(str(self.loss))
-        with open(path+'acc.txt','w') as f:
-            f.write(str(self.acc))
+        np.savetxt(path+'train_loss.txt',np.array(self.train_loss))
+        np.savetxt(path+'train_acc.txt',np.array(self.train_acc))
+        np.savetxt(path+'acc.txt',np.array(self.acc))
+        np.savetxt(path+'loss.txt',np.array(self.loss))
     
     def load_model(self,path):
+        # dummy input to build the model
+        dummy_input = tf.zeros(self.test_datas.shape)
+        self.net(dummy_input)
         if not os.path.exists(path+'model.h5'):
             print('model not found')
             return
@@ -109,23 +147,45 @@ class CNN():
         with open(path+'acc.txt','r') as f:
             self.acc = eval(f.read())
 
-def load_data(path):
-    datas = np.load(path+'datas.npy')
-    datas = datas[:,:3]
-    labels = np.load(path+'labels.npy')
+def load_data():
+    datas = np.load(data_path)
+    datas = datas[1:,:2]
+    datas = datas/200.0
+    labels_crbmse = np.load(label_path)
+    if len(labels_crbmse.shape)>1:
+        labels_crbmse = labels_crbmse[1:,:]
+        labels = np.zeros((labels_crbmse.shape[0]))
+        labels_crb = labels_crbmse[:,:6]
+        labels_mse = labels_crbmse[:,6:]
+        for idx in range(labels_crbmse.shape[0]):
+            min_crb_idx = np.argmin(labels_crb[idx])
+            min_mse = np.min(labels_mse[idx])
+            min_idx = np.where(labels_mse[idx]==min_mse)
+            max_crb = np.argmax(labels_crb[idx,min_idx])
+            labels[idx] = min_idx[0][max_crb]
+        # labels[idx] = min_crb_idx
+    # pirnt labels distribution
+    else:
+        labels = labels_crbmse[1:]
+    labels_num = np.zeros((6))
+    for i in range(6):
+        labels_num[i] = np.sum(labels==i)
+    label_percent = labels_num/np.sum(labels_num)
+    print(label_percent)
     return datas,labels
 
 def main():
-    model_save_path = 'model/only_pos_as_input/'
-    datas,labels = load_data('')
+    datas,labels = load_data()
     print(datas.shape)
     print(labels.shape)
-    cnn = CNN(6,(6,6),datas,labels,target_info_as_input=True,learning_rate=0.001,batch_size=32)
-    # cnn.load_model('model/')
+    cnn = CNN(6,(6,6),datas,labels,target_info_as_input=True,learning_rate=1e-4,batch_size=256,save=True)
     cnn.train_test_split()
-    cnn.learn(500)
+    cnn.load_model(model_save_path)
+    cnn.learn(1000)
     cnn.save_model(model_save_path)
 
 if __name__ == '__main__':
-    model_save_path = 'model/only_pos_as_input/'
+    data_path = 'datas.npy'
+    label_path = 'labels.npy'
+    model_save_path = 'model/0409/'
     main()

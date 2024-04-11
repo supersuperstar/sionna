@@ -13,7 +13,7 @@ model_save_path = './models/street/' # 模型保存路径
 DAS = 200 # Default Area Size,默认目标活动区域范围（200m）
 VCRT = 0.05 # Velocity Change Rate,速度变化概率 m/s
 VCS = 4 # Velocity Change Size,速度变化大小，即一次最多变化多少 m/s
-VCRG = [10,10] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
+VCRG = [5,22] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
 TIME_SLOT = 0.5 # 时间间隔 s
 # 目标移动策略 random,graph
 # random: 在区域内随机移动，需更改配置DAS，目标将在以原点为中心，边长为2*DAS的正方形区域内随机移动
@@ -283,7 +283,7 @@ class Environment():
             # points: [num2,3] float,指定的移动点
             self.points = kwargs.get('points',np.array([[0,0,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
-            self.point_bias = kwargs.get('point_bias',1)
+            self.point_bias = kwargs.get('point_bias',0)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
             self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]]))
             self.num_points = len(self.points)
@@ -296,7 +296,7 @@ class Environment():
         self.target_name = kwargs.get('target_name','car')
         self.target_path = kwargs.get('target_path','meshes/car.ply')
         self.target_material = kwargs.get('target_material','itu_concrete')
-        self.target_size = kwargs.get('target_size',2.0) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
+        self.target_size = kwargs.get('target_size',1.3) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         # 天线配置参数 ---------------------------------------------------------
         self.tx_params = {
             "num_rows": kwargs.get('num_tx_rows',1),
@@ -540,12 +540,12 @@ class Environment():
         a,tau = self.paths.cir()
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
         label = 0
-        best_reward = -99999
+        crbs = self._get_reward(action=0,method='crb')
         self.reward = self._get_reward(action=0,method='crb')
-        for i,r in enumerate(self.reward):
-            if self.los[i] and r > best_reward:
-                best_reward = r
-                label = i
+        mses = []
+        for action in range(self.BS_num):
+            mse = self._get_reward(action=action,method='mse')
+            mses.append(mse)
         if not target_info:
             data = self.h_freq[0,:,0,:,0,:,:]
             data = tf.transpose(data,perm=[2,3,0,1])
@@ -580,7 +580,10 @@ class Environment():
                 self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
         
         if target_info:
-            return tf.concat([data,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),label,self.done
+            crbs = tf.constant(crbs,dtype=tf.float32)
+            mses = tf.constant(mses,dtype=tf.float32)
+            return tf.concat([data,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),\
+                tf.concat([crbs,mses],axis=0),self.done
         return data,label,self.done
     
     def _normalize_h(self,h):
@@ -639,7 +642,7 @@ class Environment():
         # 如果估计值和真实值的相差在真实值的5%以内，那么依据误差大小奖励在0~1之间
         # 否则，惩罚值在-1~0之间
         if method == 'mse':
-            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
+            """self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
             if self.los[action]:
                 self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
                 diff = np.abs(self.range_true-self.range_est)
@@ -652,7 +655,18 @@ class Environment():
                     return -(diff/self.range_true)
             else:
                 self.range_est = 0
-                return -1
+                return -1"""
+            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
+            if self.los[action]:
+                self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
+                diff = np.abs(self.range_true-self.range_est)
+                diff = diff - self.target_size
+                if diff < 0 :
+                    diff = 0
+                return diff
+            else:
+                self.range_est = 0
+                return 999
         elif method == 'crb':
             mask = self.scene.get_obj_mask(self.paths,singleBS=True)[0]
             # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
@@ -758,32 +772,34 @@ def test():
             inner_step += 1
 
 def store_data():
-    if os.path.exists('datas.npy'):
-        datas = np.load('datas.npy')
-        labels = np.load('labels.npy')
+    if os.path.exists(data_path):
+        datas = np.load(data_path)
+        labels = np.load(label_path)
     else:
         datas = np.zeros((1,12),dtype=np.float32)
-        labels = np.zeros((1),dtype=np.int32)
+        labels = np.zeros((1,12),dtype=np.float32)
     step = 0
-    for episode in range(1500):
+    for episode in range(5000):
         print(f"====={episode}th episode start=====")
         env.reset()
         inner_step = 0
         while True:
             data,label,done = env.get_data_label(target_info=True)
             data = np.expand_dims(data,axis=0)
-            label = np.array([label],dtype=np.int32)
-            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tBS:{label}\tcrb:{-env.reward}\t{env.los}")
+            label = np.array([label],dtype=np.float32)
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tlabel:{label}\t{env.los}")
             datas = np.concatenate((datas,data),axis=0)
             labels = np.concatenate((labels,label),axis=0)
             if done:
                 break
             step += 1
             inner_step += 1
-        np.save('datas.npy',datas)
-        np.save('labels.npy',labels)
+        np.save(data_path,datas)
+        np.save(label_path,labels)
 
 if __name__ == "__main__":
+    data_path = 'datas-new.npy'
+    label_path = 'labels-new.npy'
     np.set_printoptions(precision=1)
     # end_points = np.array([[0,-170,0.05],[0,170,0.05]])
     # points = np.array([])
