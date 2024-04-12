@@ -14,6 +14,7 @@ DAS = 200 # Default Area Size,默认目标活动区域范围（200m）
 VCRT = 0.05 # Velocity Change Rate,速度变化概率 m/s
 VCS = 4 # Velocity Change Size,速度变化大小，即一次最多变化多少 m/s
 VCRG = [5,22] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
+VCRG = [5,22] # Velocity Change Range,速度变化范围 m/s (0.28m/s~~1km/h)
 TIME_SLOT = 0.5 # 时间间隔 s
 # 目标移动策略 random,graph
 # random: 在区域内随机移动，需更改配置DAS，目标将在以原点为中心，边长为2*DAS的正方形区域内随机移动
@@ -283,7 +284,7 @@ class Environment():
             # points: [num2,3] float,指定的移动点
             self.points = kwargs.get('points',np.array([[0,0,0.05]]))
             # point_bias: float,移动点偏移范围,目标会把目的点设置为以point为中心，point_bias为半径的圆内的随机点
-            self.point_bias = kwargs.get('point_bias',1)
+            self.point_bias = kwargs.get('point_bias',0)
             # point_path:[num1+num2,num1+num2] int,邻接矩阵，表示点之间的路径关系（有向图表示）,前num1个为end_points,后num2个为points
             self.point_path = kwargs.get('point_path',np.array([[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[0,0,0,0,1],[1,1,1,1,0]]))
             self.num_points = len(self.points)
@@ -296,6 +297,7 @@ class Environment():
         self.target_name = kwargs.get('target_name','car')
         self.target_path = kwargs.get('target_path','meshes/car.ply')
         self.target_material = kwargs.get('target_material','itu_concrete')
+        self.target_size = kwargs.get('target_size',1.3) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         self.target_size = kwargs.get('target_size',1.3) # 目标的尺寸，用于在计算估计误差时减去的偏移量，即偏移量在目标尺寸范围内视为0
         # 天线配置参数 ---------------------------------------------------------
         self.tx_params = {
@@ -541,7 +543,12 @@ class Environment():
         self.h_freq = cir_to_ofdm_channel(self.frequencies, a, tau, normalize=True)
         label = 0
         crbs = self._get_reward(action=0,method='crb')
+        crbs = self._get_reward(action=0,method='crb')
         self.reward = self._get_reward(action=0,method='crb')
+        mses = []
+        for action in range(self.BS_num):
+            mse = self._get_reward(action=action,method='mse')
+            mses.append(mse)
         mses = []
         for action in range(self.BS_num):
             mse = self._get_reward(action=action,method='mse')
@@ -580,6 +587,10 @@ class Environment():
                 self.velocity_now = self.velocity_now / np.linalg.norm(self.velocity_now) * VCRG[1]
         
         if target_info:
+            crbs = tf.constant(crbs,dtype=tf.float32)
+            mses = tf.constant(mses,dtype=tf.float32)
+            return tf.concat([data,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),\
+                tf.concat([crbs,mses],axis=0),self.done
             crbs = tf.constant(crbs,dtype=tf.float32)
             mses = tf.constant(mses,dtype=tf.float32)
             return tf.concat([data,tf.constant(self.pos_now,dtype=tf.float32),tf.constant(self.velocity_now,dtype=tf.float32)],axis=0),\
@@ -655,6 +666,18 @@ class Environment():
                     return -(diff/self.range_true)
             else:
                 self.range_est = 0
+                return -1"""
+            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
+            if self.los[action]:
+                self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
+                diff = np.abs(self.range_true-self.range_est)
+                diff = diff - self.target_size
+                if diff < 0 :
+                    diff = 0
+                return diff
+            else:
+                self.range_est = 0
+                return 999
                 return -1"""
             self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
             if self.los[action]:
@@ -775,10 +798,15 @@ def store_data():
     if os.path.exists(data_path):
         datas = np.load(data_path)
         labels = np.load(label_path)
+    if os.path.exists(data_path):
+        datas = np.load(data_path)
+        labels = np.load(label_path)
     else:
         datas = np.zeros((1,12),dtype=np.float32)
         labels = np.zeros((1,12),dtype=np.float32)
+        labels = np.zeros((1,12),dtype=np.float32)
     step = 0
+    for episode in range(5000):
     for episode in range(5000):
         print(f"====={episode}th episode start=====")
         env.reset()
@@ -786,6 +814,8 @@ def store_data():
         while True:
             data,label,done = env.get_data_label(target_info=True)
             data = np.expand_dims(data,axis=0)
+            label = np.array([label],dtype=np.float32)
+            print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tlabel:{label}\t{env.los}")
             label = np.array([label],dtype=np.float32)
             print(f"\r【{step}-{inner_step}th step】pos:[{float(env.pos_now[0]):.1f},{float(env.pos_now[1]):.1f},{float(env.pos_now[2]):.2f}]\tv:{np.linalg.norm(env.velocity_now):.2f}\tlabel:{label}\t{env.los}")
             datas = np.concatenate((datas,data),axis=0)
@@ -796,10 +826,12 @@ def store_data():
             inner_step += 1
         np.save(data_path,datas)
         np.save(label_path,labels)
+        np.save(data_path,datas)
+        np.save(label_path,labels)
 
 if __name__ == "__main__":
-    data_path = 'datas-new.npy'
-    label_path = 'labels-new.npy'
+    data_path = 'datas-4010.npy'
+    label_path = 'labels-4010.npy'
     np.set_printoptions(precision=1)
     # end_points = np.array([[0,-170,0.05],[0,170,0.05]])
     # points = np.array([])
