@@ -685,6 +685,9 @@ class Paths:
         
         if mask is not None:
             a = tf.where(mask, a, tf.zeros_like(a))
+        # if mask is all zero
+        if mask is not None and tf.reduce_sum(tf.cast(mask,tf.int32)) == 0:
+            return tf.zeros_like(a,dtype=tf.int8)
         
         if self._scene.synthetic_array:
             tau = tf.expand_dims(tau, axis=3)

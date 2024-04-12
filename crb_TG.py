@@ -17,7 +17,8 @@ import numpy as np
 import sionna
 import tqdm
 import json
-from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel
+from sionna.channel import subcarrier_frequencies, cir_to_ofdm_channel,cir_to_time_channel,time_to_ofdm_channel,time_lag_discrete_time_channel
+from sionna.ofdm import ResourceGrid
 # Import Sionna RT components
 from mysionna.rt import load_scene, Transmitter, Receiver, PlanarArray, Scene
 from mysionna.rt.scattering_pattern import *
@@ -39,19 +40,22 @@ reflection = config.get("reflection")
 scattering = config.get("scattering")
 diffraction = config.get("diffraction")
 edge_diffraction = config.get("edge_diffraction")
+scat_keep_prob = config.get("scat_keep_prob")
+rg = ResourceGrid(num_ofdm_symbols=num_time_steps,fft_size=subcarrier_num,subcarrier_spacing=subcarrier_spacing)
+l_min,l_max = time_lag_discrete_time_channel(rg.bandwidth)
 
 scene_info = [
     {
         "scene_name":"street", # 场景名称
         "paths":"./scenes/Street/street.xml", # 场景路径
         "tgpath":"meshes/car.ply", # 目标路径
-        "tgmat":"itu_metal", # 目标材质
+        "tgmat":"itu_concrete", # 目标材质
         "tgname":"car", # 目标名称
         "tgv":[0,0,0], # 目标速度
-        "bspos":[[32.8,0,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-88.4,45.3],[108.6,-121.1,24.9]],# ,[0,-1,2.95],[-4.9,0,2.7],[4.9,0,2.7]], # 基站位置
-        "map_center":[-76,9,0],
-        "map_size_x":230,
-        "map_size_y":45,
+        "bspos":[[32.8,35.2,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-78.4,45.3],[141.6,-28.7,24.9]],# ,[0,-1,2.95],[-4.9,0,2.7],[4.9,0,2.7]], # 基站位置
+        "map_center":[0,0,0.05],
+        "map_size_x":200,
+        "map_size_y":200,
         "cell_size":2,
     },
 ]
@@ -62,50 +66,64 @@ tf.random.set_seed(1) # Set global random seed for reproducibility
 def CSI(scene:Scene,info,cell_pos,look_at,return_tau=False,tgname=None):
     h = []
     tau_true = []
-    for pos in cell_pos:
+    
+    for id,pos in enumerate(cell_pos):
         # Set the transmitter and receiver
-        tx = Transmitter(name='tx',position=pos)
-        rx = Receiver(name='rx',position=pos)
+        tx = Transmitter(name=f'tx-{id}',position=pos)
+        rx = Receiver(name=f'rx-{id}',position=pos)
         tx.look_at(look_at)
         rx.look_at(look_at)
-        if scene.get("tx") is not None:
-            scene.remove("tx")
         scene.add(tx)
-        if scene.get("rx") is not None:
-            scene.remove("rx")
         scene.add(rx)
-        # Compute the channel impulse response
-        paths = scene.compute_paths(max_depth=max_depth,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,num_samples=num_samples,scat_keep_prob=0.01)
-        paths.normalize_delays = False
-        if return_tau:
-            v,obj_name = scene.compute_target_velocities(paths, return_obj_names=True)
-            paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps,target_velocities=v)
-            # split obj_name by '&'
-            # obj_name = [i.split("&") for i in obj_name]
-        else: 
-            paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps)
-        a, tau = paths.cir()
-        frequencies = subcarrier_frequencies(subcarrier_num, subcarrier_spacing)
-        h_freq = cir_to_ofdm_channel(frequencies, a, tau, normalize=False)
-        h.append(h_freq)
         # 记录真实tau
         if return_tau:
-            tau_true.append(99999)
-            mask = tf.equal(obj_name, tgname)
-            mask = tf.reduce_any(mask, axis=0)
-            tau = tf.squeeze(tau)
-            mask = tf.squeeze(mask)
-            tau_obj = tf.gather(tau, tf.where(mask))
-            tau_obj = tf.gather(tau_obj,tf.where(tau_obj>0))
-            if tau_obj.shape[0] > 0:
-                tau_true[-1] = min(tau_true[-1],tf.reduce_min(tau_obj))
-        
+            tau = np.linalg.norm(np.array(look_at)-np.array(pos))/1.5e8
+            tau_true.append(tau)
+    # Compute the channel impulse response
+    paths = scene.compute_paths(max_depth=max_depth,los=los,reflection=reflection,diffraction=diffraction,scattering=scattering,edge_diffraction=edge_diffraction,num_samples=num_samples*len(cell_pos),scat_keep_prob=scat_keep_prob)
+    paths.normalize_delays = False
+    """# if return_tau:
+    #     # v,obj_name = scene.compute_target_velocities(paths, return_obj_names=True)
+    #     paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps,target_velocities=None)
+    #     # split obj_name by '&'
+    #     # obj_name = [i.split("&") for i in obj_name]
+    #     pass
+    # else: 
+    #     paths.apply_doppler(sampling_frequency=subcarrier_spacing, num_time_steps=num_time_steps)"""
+    cir = paths.cir()
+    mask = scene.get_obj_mask(paths,True)[0]
+    crb = paths.crb_delay(diag=True,mask=mask)
+    crb_target = tf.where(mask, crb, 1)
+    a = tf.where(mask,paths.a,0)
+    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,num_tx]
+    a = tf.transpose(a,perm=[0,2,4,5,6,1,3])
+    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx]
+    a = tf.linalg.diag_part(a)
+    # [batch_size,num_rx_ant,num_tx_ant,max_num_paths,num_time_steps,num_rx,1]
+    a = tf.expand_dims(a, axis=-1)
+    a = tf.transpose(a,perm=[0,5,1,6,2,3,4])
+    a = tf.abs(a)
+    crb_target = tf.reduce_min(crb_target, axis=6)
+    crb_target = tf.reduce_min(crb_target, axis=4)
+    crb_target = tf.reduce_min(crb_target, axis=2)
+    a = tf.reduce_max(a, axis=6)
+    a = tf.reduce_max(a, axis=4)
+    a = tf.reduce_max(a, axis=2)
+    a_sortidx = tf.argsort(a, axis=-1, direction='DESCENDING')
+    a_max_idx = tf.gather(a_sortidx, 0, axis=-1)
+    a_max_idx = tf.reshape(a_max_idx, [-1])
+    crb_target = tf.gather(crb_target, a_max_idx, axis=-1)
+    crb_target = tf.reshape(crb_target, [-1,a_max_idx.shape[0]])
+    crb_target = tf.linalg.diag_part(crb_target)
+    crb_target = tf.reshape(crb_target, [a.shape[0], a.shape[1], a.shape[2]])
+    h_time = cir_to_time_channel(rg.bandwidth,*cir,l_min=l_min,l_max=l_max,normalize=True)
+    h.append(h_time)
     if return_tau:
-        return h,tau_true
+        return h,tau_true,crb_target
     return h
 
 
-def music(h_freq,frequencies,start = 0,end = 400,step = 0.1):
+def music(h_freq,frequencies,start = 0,end = 3000,step = 0.1):
     y_i = h_freq[0,0,0,0,0,0,:]
     y_i = tf.squeeze(y_i)
     y_i = tf.expand_dims(y_i, axis=0)
@@ -183,7 +201,7 @@ def setScene(filename,tg=None,tgname=None,tgv=None):
                                 horizontal_spacing=0.5,
                                 pattern="dipole",
                                 polarization="V")
-    scene.frequency = 2.14e9 # in Hz; implicitly updates RadioMaterials
+    scene.frequency = 6e9 # in Hz; implicitly updates RadioMaterials
     scene.synthetic_array = True # If set to False, ray tracing will be done per antenna element (slower for large arrays)
     #################配置场景材质属性#################
     p1 = LambertianPattern()
@@ -197,9 +215,9 @@ def setScene(filename,tg=None,tgname=None,tgv=None):
     if scene.get("itu_glass") is not None:
         scene.get("itu_glass").scattering_coefficient = 0.25
         scene.get("itu_glass").scattering_pattern = p2
-    if scene.get("itu_ground") is not None:
-        scene.get("itu_ground").scattering_coefficient = 0.8
-        scene.get("itu_ground").scattering_pattern = p1
+    if scene.get("itu_medium_dry_ground") is not None:
+        scene.get("itu_medium_dry_ground").scattering_coefficient = 0.8
+        scene.get("itu_medium_dry_ground").scattering_pattern = p1
     if scene.get("itu_metal") is not None:
         scene.get("itu_metal").scattering_coefficient = 0.1
         scene.get("itu_metal").scattering_pattern = p2
@@ -236,54 +254,58 @@ def getRayType():
     return ray_type
     
 
-def saveFig(title,tau_true,tau_est,crb,col,step):
-    pad = 0
-    tau_true = np.array(tau_true)
-    tau_est = np.array(tau_est)
-    crb = crb*3e8
-    crb = np.log10(crb)
-    crb = np.reshape(crb,(-1,col))
-    mse = np.abs(tau_true-tau_est)
-    np.save(f"{title}/mse_{step}.npy",mse)
-    mse = np.reshape(mse,(-1,col))
-    tau_true = np.reshape(tau_true,(-1,col))
-    tau_est = np.reshape(tau_est,(-1,col))
-    mask = mse >= 0.1
-    mse[mask] = pad
-    mask = tau_true>=0.1
-    mse[mask] = pad
-    mask = tau_true==0
-    mse[mask] = pad
-    mask = tau_true==-1
-    mse[mask] = pad
-    mse = mse*3e8
-    mse = np.log10(mse)
-    
-    mse = np.rot90(mse)
-    crb = np.rot90(crb)
-    # x轴对称
-    mse = np.flip(mse,1)
-    crb = np.flip(crb,1)
-    mse = np.flip(mse,0)
-    crb = np.flip(crb,0)
+def saveFig(title,tau_True,tau_Est,Crb,col,step,bspos):
+    for idx,pos in enumerate(bspos):
+        tau_true = tau_True[:,idx]
+        tau_est = tau_Est[:,idx]
+        crb = Crb[:,idx]
+        pad = 0
+        tau_true = np.array(tau_true)
+        tau_est = np.array(tau_est)
+        # crb = crb*3e8
+        crb = np.log10(crb)
+        crb = np.reshape(crb,(-1,col))
+        mse = np.abs(tau_true-tau_est)
+        np.save(f"{title}/mse_{step}.npy",mse)
+        mse = np.reshape(mse,(-1,col))
+        tau_true = np.reshape(tau_true,(-1,col))
+        tau_est = np.reshape(tau_est,(-1,col))
+        mask = mse >= 0.1
+        mse[mask] = pad
+        mask = tau_true>=0.1
+        mse[mask] = pad
+        mask = tau_true==0
+        mse[mask] = pad
+        mask = tau_true==-1
+        mse[mask] = pad
+        # mse = mse*3e8
+        mse = np.log10(mse)
+        
+        mse = np.rot90(mse)
+        crb = np.rot90(crb)
+        # x轴对称
+        mse = np.flip(mse,1)
+        crb = np.flip(crb,1)
+        mse = np.flip(mse,0)
+        crb = np.flip(crb,0)
 
-    # set figure size
-    plt.figure(figsize=(10, 5))
-    plt.subplots_adjust(wspace=0.5)
-    plt.subplot(121)
-    plt.title("Indoor Sensing MSE")
-    plt.xlabel("x axis")
-    plt.ylabel("y axis")
-    plt.imshow(mse)
-    # set colorbar size
-    plt.colorbar(fraction=0.046, pad=0.04)
-    plt.subplot(122)
-    plt.title("Indoor Sensing CRB")
-    plt.xlabel("x axis")
-    plt.ylabel("y axis")
-    plt.imshow(crb)
-    plt.colorbar(fraction=0.046, pad=0.04)
-    plt.savefig(f"{title}/out.png")
+        # set figure size
+        plt.figure(figsize=(10, 5))
+        plt.subplots_adjust(wspace=0.5)
+        plt.subplot(121)
+        plt.title("Sensing MSE")
+        plt.xlabel("x axis")
+        plt.ylabel("y axis")
+        plt.imshow(mse)
+        # set colorbar size
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.subplot(122)
+        plt.title("Sensing CRB")
+        plt.xlabel("x axis")
+        plt.ylabel("y axis")
+        plt.imshow(crb)
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.savefig(f"{title}/out-{pos}.png")
 
 
 def main():
@@ -335,7 +357,8 @@ def main():
             scene = setScene(scene_path,target,[tgname],[tgv])
             
             # 计算含目标的CSI
-            h_list1,tau_true = CSI(scene,info,bspos,tgpos,return_tau=True,tgname=tgname)
+            h_list1,tau_true,crb = CSI(scene,info,bspos,tgpos,return_tau=True,tgname=tgname)
+            crb = tf.squeeze(crb)
             h_tgs.append(h_list1)
             tau_trues.append(tau_true)
             # 计算crb
@@ -344,23 +367,6 @@ def main():
             if scene.get("rx") is not None:
                 scene.remove("rx")
             # tqdm.tqdm.write(f"crb-{tgpos}")
-            crbs = scene.coverage_map_sensing(only_target=True,
-                                    cell_pos=bspos,
-                                    look_at=tgpos,
-                                    batch_size=batch_size,
-                                    singleBS=True,
-                                    num_samples=num_samples*batch_size,
-                                    max_depth=max_depth,
-                                    los=los,
-                                    reflection=reflection,
-                                    scattering=scattering,
-                                    diffraction=diffraction,
-                                    edge_diffraction=edge_diffraction,
-                                    num_time_steps=num_time_steps,
-                                    scat_keep_prob=0.01,
-                                    bar=False)
-            
-            crb = tf.squeeze(crbs)
             tg_crbs.append(crb)
             
             # 计算music估计值
@@ -368,6 +374,7 @@ def main():
             for i in range(len(h_list1)):
                 tau = tau_true[i]
                 h = h_list1[i]-h_env[i]
+                h_freq = time_to_ofdm_channel(h,rg,l_min)
                 tau = tau*1e9
                 # start = tau-step*500
                 # if start < 0:
@@ -376,7 +383,7 @@ def main():
                 start = 0
                 end = 200
                 try:
-                    t = music(h,frequencies,start=start,end=end,step=step)
+                    t = music(h_freq,frequencies,start=start,end=end,step=step)
                 except:
                     t = 0
                 tau_est = t
@@ -388,14 +395,11 @@ def main():
         tau_ests = np.reshape(tau_ests,(-1,len(h_list1)))
         tg_crbs = np.array(tg_crbs)
         np.save(f"{title}/h_tgs.npy",h_tgs)
-        np.save(f"{title}/tau_trues.npy",tau_trues)
-        np.save(f"{title}/tau_ests.npy",tau_ests)
-        np.save(f"{title}/tg_crbs.npy",tg_crbs)
-        
-        
-        
+        np.savetxt(f"{title}/tau_trues.npy",tau_trues)
+        np.savetxt(f"{title}/tau_ests.npy",tau_ests)
+        np.savetxt(f"{title}/tg_crbs.npy",tg_crbs) 
         # 保存结果
-        # saveFig(title,tau_trues,tau_ests,tg_crbs,int(y/cell_size)+1,step)
+        saveFig(title,tau_trues,tau_ests,tg_crbs,int(y/cell_size)+1,step,bspos)
                 
         print ("done")
         
