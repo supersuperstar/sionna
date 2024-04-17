@@ -610,7 +610,7 @@ class Environment():
         h_flatten = tf.reshape(h_flatten,[-1])
         return h_flatten
 
-    def _music_range(self,h_freq,BS_id,frequencies,start = 0,end = 2000,step = 0.2):
+    def _music_range(self,h_freq,BS_id,frequencies,start = 0,end = 3000,step = 0.2):
         try:
             y_i = h_freq[0,BS_id,0,BS_id,0,0,:]
             y_i = tf.squeeze(y_i)
@@ -678,7 +678,7 @@ class Environment():
             else:
                 self.range_est = 0
                 return 999
-                return -1"""
+                return -1
             self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
             if self.los[action]:
                 self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
@@ -806,7 +806,6 @@ def store_data():
         labels = np.zeros((1,12),dtype=np.float32)
         labels = np.zeros((1,12),dtype=np.float32)
     step = 0
-    for episode in range(5000):
     for episode in range(5000):
         print(f"====={episode}th episode start=====")
         env.reset()

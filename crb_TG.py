@@ -54,9 +54,9 @@ scene_info = [
         "tgv":[0,0,0], # 目标速度
         "bspos":[[32.8,35.2,50.3],[-30.3,93,20.8],[-121.4,33.2,8.9],[27.2,-143.9,8.6],[-25.3,-78.4,45.3],[141.6,-28.7,24.9]],# ,[0,-1,2.95],[-4.9,0,2.7],[4.9,0,2.7]], # 基站位置
         "map_center":[0,0,0.05],
-        "map_size_x":200,
-        "map_size_y":200,
-        "cell_size":2,
+        "map_size_x":400,
+        "map_size_y":400,
+        "cell_size":1,
     },
 ]
 
@@ -64,7 +64,6 @@ tf.random.set_seed(1) # Set global random seed for reproducibility
 
 
 def CSI(scene:Scene,info,cell_pos,look_at,return_tau=False,tgname=None):
-    h = []
     tau_true = []
     
     for id,pos in enumerate(cell_pos):
@@ -117,10 +116,9 @@ def CSI(scene:Scene,info,cell_pos,look_at,return_tau=False,tgname=None):
     crb_target = tf.linalg.diag_part(crb_target)
     crb_target = tf.reshape(crb_target, [a.shape[0], a.shape[1], a.shape[2]])
     h_time = cir_to_time_channel(rg.bandwidth,*cir,l_min=l_min,l_max=l_max,normalize=True)
-    h.append(h_time)
     if return_tau:
-        return h,tau_true,crb_target
-    return h
+        return h_time,tau_true,crb_target
+    return h_time
 
 
 def music(h_freq,frequencies,start = 0,end = 3000,step = 0.1):
@@ -254,14 +252,20 @@ def getRayType():
     return ray_type
     
 
-def saveFig(title,tau_True,tau_Est,Crb,col,step,bspos):
+def saveFig(info,title,tau_True,tau_Est,Crb,col,step,bspos):
+    map_center = info.get("map_center")
+    x = info.get("map_size_x")
+    y = info.get("map_size_y")
+    cell_size = info.get("cell_size")
     for idx,pos in enumerate(bspos):
+        bspos_x = (pos[0]-map_center[0]+x/2)/cell_size
+        bspos_y = y/cell_size-(pos[1]-map_center[1]+y/2)/cell_size
         tau_true = tau_True[:,idx]
         tau_est = tau_Est[:,idx]
         crb = Crb[:,idx]
         pad = 0
-        tau_true = np.array(tau_true)
-        tau_est = np.array(tau_est)
+        # tau_true = np.array(tau_true)
+        # tau_est = np.array(tau_est)
         # crb = crb*3e8
         crb = np.log10(crb)
         crb = np.reshape(crb,(-1,col))
@@ -270,24 +274,24 @@ def saveFig(title,tau_True,tau_Est,Crb,col,step,bspos):
         mse = np.reshape(mse,(-1,col))
         tau_true = np.reshape(tau_true,(-1,col))
         tau_est = np.reshape(tau_est,(-1,col))
-        mask = mse >= 0.1
-        mse[mask] = pad
-        mask = tau_true>=0.1
-        mse[mask] = pad
-        mask = tau_true==0
-        mse[mask] = pad
-        mask = tau_true==-1
-        mse[mask] = pad
+        # mask = mse >= 0.1
+        # mse[mask] = pad
+        # mask = tau_true>=0.1
+        # mse[mask] = pad
+        # mask = tau_true==0
+        # mse[mask] = pad
+        # mask = tau_true==-1
+        # mse[mask] = pad
         # mse = mse*3e8
         mse = np.log10(mse)
         
         mse = np.rot90(mse)
         crb = np.rot90(crb)
         # x轴对称
-        mse = np.flip(mse,1)
-        crb = np.flip(crb,1)
-        mse = np.flip(mse,0)
-        crb = np.flip(crb,0)
+        # mse = np.flip(mse,1)
+        # crb = np.flip(crb,1)
+        # mse = np.flip(mse,0)
+        # crb = np.flip(crb,0)
 
         # set figure size
         plt.figure(figsize=(10, 5))
@@ -297,6 +301,7 @@ def saveFig(title,tau_True,tau_Est,Crb,col,step,bspos):
         plt.xlabel("x axis")
         plt.ylabel("y axis")
         plt.imshow(mse)
+        plt.scatter(bspos_x,bspos_y,marker='x',color='r')
         # set colorbar size
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.subplot(122)
@@ -304,6 +309,7 @@ def saveFig(title,tau_True,tau_Est,Crb,col,step,bspos):
         plt.xlabel("x axis")
         plt.ylabel("y axis")
         plt.imshow(crb)
+        plt.scatter(bspos_x,bspos_y,marker='x',color='r')
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.savefig(f"{title}/out-{pos}.png")
 
@@ -346,60 +352,79 @@ def main():
             scene = setScene(scene_path)
             h_env = CSI(scene,info,bspos,[0,0,0])
             np.save(f"{env_title}/h_env.npy",h_env)
-            
+        
         h_tgs = []
         tau_trues = []
         tau_ests = []
         tg_crbs = []
+        h_tgs_exist = False
+        tau_trues_exist = False
+        tau_ests_exist = False
+        tg_crbs_exist = False
+        idx = 0
+        if os.path.exists(f"{title}/h_tgs.npy"):
+            h_tgs = np.load(f"{title}/h_tgs.npy")
+            h_tgs_exist = True
+        if os.path.exists(f"{title}/tau_trues.npy"):
+            tau_trues = np.loadtxt(f"{title}/tau_trues.npy")
+            tau_trues_exist = True
+        if os.path.exists(f"{title}/tau_ests.npy"):
+            tau_ests = np.loadtxt(f"{title}/tau_ests.npy")
+            tau_ests_exist = True
+        if os.path.exists(f"{title}/tg_crbs.npy"):
+            tg_crbs = np.loadtxt(f"{title}/tg_crbs.npy")    
+            tg_crbs_exist = True
         for tgpos in tqdm.tqdm(cell_pos):
-            # 设置目标场景信息
-            target = Target(tgpath, tgmat, translate=tgpos)
-            scene = setScene(scene_path,target,[tgname],[tgv])
-            
-            # 计算含目标的CSI
-            h_list1,tau_true,crb = CSI(scene,info,bspos,tgpos,return_tau=True,tgname=tgname)
-            crb = tf.squeeze(crb)
-            h_tgs.append(h_list1)
-            tau_trues.append(tau_true)
-            # 计算crb
-            if scene.get("tx") is not None:
-                scene.remove("tx")
-            if scene.get("rx") is not None:
-                scene.remove("rx")
-            # tqdm.tqdm.write(f"crb-{tgpos}")
-            tg_crbs.append(crb)
+            if not (h_tgs_exist and tau_trues_exist and tg_crbs_exist):
+                # 设置目标场景信息
+                target = Target(tgpath, tgmat, translate=tgpos)
+                scene = setScene(scene_path,target,[tgname],[tgv])  
+                # 计算含目标的CSI
+                h_time,tau_true,crb = CSI(scene,info,bspos,tgpos,return_tau=True,tgname=tgname)
+                crb = tf.squeeze(crb)
+                h_tgs.append(h_time)
+                tau_trues.append(tau_true)
+                tg_crbs.append(crb)
             
             # 计算music估计值
             # tqdm.tqdm.write(f"music-{tgpos}")
-            for i in range(len(h_list1)):
-                tau = tau_true[i]
-                h = h_list1[i]-h_env[i]
-                h_freq = time_to_ofdm_channel(h,rg,l_min)
-                tau = tau*1e9
-                # start = tau-step*500
-                # if start < 0:
-                #     start = 0
-                # end = tau+step*500
-                start = 0
-                end = 200
-                try:
-                    t = music(h_freq,frequencies,start=start,end=end,step=step)
-                except:
-                    t = 0
-                tau_est = t
-                tau_ests.append(tau_est)
+            if not tau_ests_exist:
+                for i in range(len(bspos)):
+                    if tau_trues_exist:
+                        tau = tau_trues[idx,i]
+                    else:
+                        tau = tau_true[i]
+                    if h_tgs_exist:
+                        h = h_tgs[idx,:,i,:,i,:,:,:]-h_env[i]
+                    else:
+                        h = h_time[:,i,:,i,:,:,:]-h_env[i]
+                    h_freq = time_to_ofdm_channel(h,rg,l_min)
+                    tau = tau*1e9
+                    # start = tau-step*500
+                    # if start < 0:
+                    #     start = 0
+                    # end = tau+step*500
+                    start = 0
+                    end = 200
+                    try:
+                        t = music(h_freq,frequencies,start=start,end=end,step=step)
+                    except:
+                        t = 0
+                    tau_est = t
+                    tau_ests.append(tau_est)
+            idx = idx + 1
         
         h_tgs = np.array(h_tgs)
         tau_trues = np.array(tau_trues)
         tau_ests = np.array(tau_ests)
-        tau_ests = np.reshape(tau_ests,(-1,len(h_list1)))
+        tau_ests = np.reshape(tau_ests,(-1,len(bspos)))
         tg_crbs = np.array(tg_crbs)
         np.save(f"{title}/h_tgs.npy",h_tgs)
         np.savetxt(f"{title}/tau_trues.npy",tau_trues)
         np.savetxt(f"{title}/tau_ests.npy",tau_ests)
         np.savetxt(f"{title}/tg_crbs.npy",tg_crbs) 
         # 保存结果
-        saveFig(title,tau_trues,tau_ests,tg_crbs,int(y/cell_size)+1,step,bspos)
+        saveFig(info,title,tau_trues,tau_ests,tg_crbs,int(y/cell_size)+1,step,bspos)
                 
         print ("done")
         

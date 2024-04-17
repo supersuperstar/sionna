@@ -6,37 +6,36 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class CNNnet(tf.keras.Model):
-    def __init__(self, num_action,input_shape,target_info_as_input=False):
+    def __init__(self, num_action,input_shape):
         super().__init__()
-        self.target_info_as_input = target_info_as_input
-        self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu',input_shape=input_shape)
-        # self.maxpool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, activation='relu')
-        self.conv3 = tf.keras.layers.Conv2D(filters=32, kernel_size=3, strides=1, activation='relu')
-        self.flat = tf.keras.layers.Flatten()
+        self.resnet = tf.keras.applications.ResNet50(include_top=False,weights=None,input_shape=input_shape,pooling='max',classes=num_action)
+        self.flatten = tf.keras.layers.Flatten()
+        
         self.dense = tf.keras.Sequential()
-        self.dense.add(tf.keras.layers.Dense(units=64, activation='relu'))
-        self.dense.add(tf.keras.layers.Dense(units=128, activation='relu'))
-        # self.dense.add(tf.keras.layers.Dense(units=512, activation='relu'))
-        self.dense.add(tf.keras.layers.Dropout(0.2))
-        # self.dense.add(tf.keras.layers.Dense(units=1024, activation='sigmoid'))
-        # self.dense.add(tf.keras.layers.Dense(units=512, activation='sigmoid'))
-        # self.dense.add(tf.keras.layers.Dense(units=128, activation='sigmoid'))
-        # self.dense.add(tf.keras.layers.Dense(units=64, activation='sigmoid'))
+        self.dense.add(tf.keras.layers.Dense(units=16, activation='relu'))
+        self.dense.add(tf.keras.layers.Dense(units=32, activation='relu'))
+        
+        self.dense_all = tf.keras.Sequential()
+        self.dense_all.add(tf.keras.layers.Dense(units=2048, activation='relu'))
+        self.dense_all.add(tf.keras.layers.Dense(units=1024, activation='relu'))
+        self.dense_all.add(tf.keras.layers.Dropout(0.2))
         self.out = tf.keras.layers.Dense(units=num_action, activation='softmax')
 
-    def call(self, inputs):
-        x = inputs
-        if not self.target_info_as_input:
-            x = self.conv1(inputs)
-            # x = self.maxpool1(x)
-            x = self.conv2(x)
-            x = self.conv3(x)
-            x = self.flat(x)
-        x = self.dense(x)
+    def call(self, inputs,inputs_tg=None):
+        img = inputs
+        info = inputs_tg
+        x = self.resnet(img)
+        x = self.flatten(x)
+        if info is not None:
+            y = self.dense(info)
+            x = tf.concat([x,y],axis=-1)
+            x = self.dense_all(x)
+        else:
+            x = self.dense_all(x)
         return self.out(x)
 
 class CNN():
+    
     def __init__(self,num_action,input_shape,datas,labels, **kwargs):
         self.learning_rate = kwargs.get('learning_rate',0.1)
         self.learning_rate = kwargs.get('learning_rate',0.1)
@@ -75,18 +74,6 @@ class CNN():
     
     def learn(self,eopchs):
         best_loss = 100
-        """for epoch in range(eopchs):
-            with tf.GradientTape() as tape:
-                y_pred = self.net(self.train_datas)      # 调用模型 y_pred = model(X) 而不是显式写出 y_pred = a * X + b
-                loss = tf.keras.losses.sparse_categorical_crossentropy(self.train_labels, y_pred)
-                loss = tf.reduce_mean(loss)
-                print (f'epoch: {epoch}, loss: {loss}')
-                grads = tape.gradient(loss, self.net.variables)    # 使用 model.variables 这一属性直接获得模型中的所有变量
-                self.optimizer.apply_gradients(grads_and_vars=zip(grads, self.net.variables))
-                if self.save and loss<best_loss:
-                    best_loss = loss
-                    self.save_model(model_save_path)
-                    print('==================model saved!==================')"""
         for epoch in range(eopchs):
             history=self.net.fit(self.train_datas,self.train_labels,batch_size=self.batch_size)
             train_loss = history.history['loss']
@@ -122,10 +109,6 @@ class CNN():
         if not os.path.exists(path):
             os.makedirs(path)
         self.net.save_weights(path+'model.h5')
-        np.savetxt(path+'train_loss.txt',np.array(self.train_loss))
-        np.savetxt(path+'train_acc.txt',np.array(self.train_acc))
-        np.savetxt(path+'acc.txt',np.array(self.acc))
-        np.savetxt(path+'loss.txt',np.array(self.loss))
         np.savetxt(path+'train_loss.txt',np.array(self.train_loss))
         np.savetxt(path+'train_acc.txt',np.array(self.train_acc))
         np.savetxt(path+'acc.txt',np.array(self.acc))
