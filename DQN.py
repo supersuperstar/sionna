@@ -678,18 +678,6 @@ class Environment():
             else:
                 self.range_est = 0
                 return 999
-                return -1
-            self.range_true = np.linalg.norm(self.BS_pos[action,:] - self.pos_now)
-            if self.los[action]:
-                self.range_est = self._music_range(self.h_freq,action,self.frequencies,**self.music_params) 
-                diff = np.abs(self.range_true-self.range_est)
-                diff = diff - self.target_size
-                if diff < 0 :
-                    diff = 0
-                return diff
-            else:
-                self.range_est = 0
-                return 999
         elif method == 'crb':
             mask = self.scene.get_obj_mask(self.paths,singleBS=True)[0]
             # [batch_size, num_rx, num_rx_ant, num_tx, num_tx_ant, max_num_paths, num_time_steps]
